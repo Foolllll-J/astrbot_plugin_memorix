@@ -6,13 +6,15 @@ import inspect
 import json
 from typing import Any, Dict, List
 
-from astrbot.api import logger
+from ..common.logging import get_logger
 
 from ...core.utils.summary_importer import SummaryImporter
 from ...providers.astrbot_provider_bridge import AstrBotLLMClient, AstrBotProviderBridge
 from ..context import AppContext
 from ..llm_client import LLMClient
 from ..settings import resolve_openapi_endpoint_config
+
+logger = get_logger("A_Memorix.SummaryService")
 
 
 class SummaryService:
@@ -24,10 +26,17 @@ class SummaryService:
             graph_store=self.ctx.graph_store,
             metadata_store=self.ctx.metadata_store,
             embedding_manager=self.ctx.embedding_manager,
-            plugin_config=self.ctx.config,
+            plugin_config=self._summary_importer_config(),
             llm_client=self.llm_client,
-            astrbot_context=self._resolve_astrbot_context(),
         )
+
+
+    def _summary_importer_config(self) -> Dict[str, Any]:
+        cfg = dict(self.ctx.config)
+        relation_write_service = getattr(self.ctx, "relation_write_service", None)
+        if relation_write_service is not None:
+            cfg["relation_write_service"] = relation_write_service
+        return cfg
 
     def _build_summary_llm_client(self) -> Any:
         provider_bridge = getattr(self.ctx, "provider_bridge", None)
@@ -356,6 +365,5 @@ class SummaryService:
             messages=summary_messages,
             source=source,
             context_length=resolved_context_length,
-            persist_messages=persist_messages,
         )
         return {"success": ok, "message": msg}

@@ -9,7 +9,12 @@
         "description": "作用域隔离模式",
         "hint": "platform_global：同平台所有会话共享记忆；user_global：按用户隔离；group_global按群隔离，私聊自动退化为按用户隔离；umo：按最细粒度隔离，每个独立消息来源一份记忆。",
         "default": "group_global",
-        "options": ["platform_global", "user_global", "group_global", "umo"]
+        "options": [
+          "platform_global",
+          "user_global",
+          "group_global",
+          "umo"
+        ]
       }
     }
   },
@@ -40,7 +45,9 @@
         "type": "list",
         "description": "命令前缀列表",
         "hint": "定义哪些字符开头的消息被视为命令。消息前置 @机器人 后仍会检查这些前缀。示例：[\"/\", \"!\", \".\"]。",
-        "default": ["/"]
+        "default": [
+          "/"
+        ]
       }
     }
   },
@@ -188,6 +195,89 @@
             "default": true
           }
         }
+      },
+      "aggregate": {
+        "type": "object",
+        "description": "聚合检索 —— 混合普通检索、时序检索与 Episode 摘要结果",
+        "hint": "A_memorix 新版 /v1/query/aggregate 使用的融合配置。",
+        "items": {
+          "rrf_k": {
+            "type": "int",
+            "description": "RRF 融合 K 值",
+            "default": 60
+          },
+          "weights": {
+            "type": "object",
+            "description": "各检索通道权重",
+            "items": {
+              "search": {
+                "type": "float",
+                "description": "普通语义检索权重",
+                "default": 1.0
+              },
+              "time": {
+                "type": "float",
+                "description": "时序检索权重",
+                "default": 1.0
+              },
+              "episode": {
+                "type": "float",
+                "description": "Episode 检索权重",
+                "default": 1.0
+              }
+            }
+          }
+        }
+      },
+      "search": {
+        "type": "object",
+        "description": "检索后处理与关系意图增强",
+        "hint": "控制智能兜底、结果去重、关系意图召回和图谱邻接召回。",
+        "items": {
+          "source_empty_fallback": {
+            "type": "object",
+            "description": "严格 source 过滤为空时是否回退到未过滤结果",
+            "items": {
+              "enabled": {
+                "type": "bool",
+                "description": "启用 source 空结果回退",
+                "default": true
+              }
+            }
+          },
+          "relation_intent": {
+            "type": "object",
+            "description": "关系型问题召回增强",
+            "items": {
+              "enabled": {
+                "type": "bool",
+                "description": "启用关系意图识别",
+                "default": true
+              },
+              "force_relation_sparse": {
+                "type": "bool",
+                "description": "关系意图下强制补充稀疏召回",
+                "default": true
+              }
+            }
+          },
+          "graph_recall": {
+            "type": "object",
+            "description": "图谱邻接/路径召回",
+            "items": {
+              "enabled": {
+                "type": "bool",
+                "description": "启用图谱关系召回",
+                "default": true
+              },
+              "max_hop": {
+                "type": "int",
+                "description": "最大跳数",
+                "default": 1
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -329,7 +419,9 @@
         "type": "list",
         "description": "每日总结触发时间",
         "hint": "设定每天自动执行总结的时间点，格式为 HH:MM（24 小时制）。支持多个时间点，例如 [\"04:00\", \"16:00\"]。",
-        "default": ["04:00"]
+        "default": [
+          "04:00"
+        ]
       }
     }
   },
@@ -349,7 +441,11 @@
         "description": "总结数据来源模式",
         "hint": "transcript：仅使用插件自身记录的消息转录，完全独立于 AstrBot 会话系统；astrbot：仅使用 AstrBot 原生会话历史记录；hybrid（推荐）：优先使用 AstrBot 会话历史，失败时自动回退到插件转录。推荐使用 hybrid 以获得最佳兼容性。",
         "default": "hybrid",
-        "options": ["transcript", "astrbot", "hybrid"]
+        "options": [
+          "transcript",
+          "astrbot",
+          "hybrid"
+        ]
       },
       "chat_provider_id": {
         "type": "string",
@@ -374,7 +470,13 @@
         "description": "总结生成的知识类型",
         "hint": "narrative（叙事型）：按时间线梳理对话脉络，适合日常闲聊；factual（事实型）：提取关键事实和结论，适合信息密度高的对话；mixed（混合型）：同时提取叙事和事实；structured（结构化）：生成结构化的知识条目；auto（自动）：由 LLM 自动判断最适合的类型。",
         "default": "narrative",
-        "options": ["narrative", "factual", "mixed", "structured", "auto"]
+        "options": [
+          "narrative",
+          "factual",
+          "mixed",
+          "structured",
+          "auto"
+        ]
       },
       "auto_import": {
         "type": "object",
@@ -550,6 +652,128 @@
             }
           }
         }
+      }
+    }
+  },
+  "tasks": {
+    "type": "object",
+    "description": "后台任务队列 —— 控制导入、总结等异步 worker",
+    "hint": "A_memorix 新版任务管理配置。一般保持默认即可。",
+    "items": {
+      "import_workers": {
+        "type": "int",
+        "description": "导入 worker 数",
+        "default": 1
+      },
+      "summary_workers": {
+        "type": "int",
+        "description": "总结 worker 数",
+        "default": 1
+      },
+      "queue_maxsize": {
+        "type": "int",
+        "description": "任务队列最大长度",
+        "default": 1024
+      },
+      "summary_poll_interval_seconds": {
+        "type": "int",
+        "description": "总结任务轮询间隔",
+        "default": 1
+      }
+    }
+  },
+  "episode": {
+    "type": "object",
+    "description": "Episode 时间片段 —— 从聊天段落异步生成可检索事件摘要",
+    "hint": "新版 A_memorix 能按 source 生成 Episode，用于 /v1/query/episode 和聚合检索。",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用 Episode 查询/存储能力",
+        "default": true
+      },
+      "generation_enabled": {
+        "type": "bool",
+        "description": "启用后台 Episode 自动生成",
+        "default": true
+      },
+      "generation_interval_seconds": {
+        "type": "int",
+        "description": "Episode 后台生成轮询间隔",
+        "default": 30
+      },
+      "generation_batch_size": {
+        "type": "int",
+        "description": "每轮处理 source 数量",
+        "default": 20
+      },
+      "max_retry": {
+        "type": "int",
+        "description": "失败重试次数",
+        "default": 3
+      },
+      "window_seconds": {
+        "type": "int",
+        "description": "默认 Episode 时间窗口秒数",
+        "default": 3600
+      },
+      "min_group_size": {
+        "type": "int",
+        "description": "最小消息聚合数",
+        "default": 2
+      },
+      "max_group_size": {
+        "type": "int",
+        "description": "最大消息聚合数",
+        "default": 24
+      },
+      "segmentation_model": {
+        "type": "string",
+        "description": "Episode 切分模型名，auto 表示跟随总结模型",
+        "default": "auto"
+      }
+    }
+  },
+  "filter": {
+    "type": "object",
+    "description": "聊天过滤 —— 控制哪些 stream/group/user 可参与检索与批量总结",
+    "hint": "whitelist 且 chats 为空表示全部拒绝；blacklist 且 chats 为空表示全部放行。",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用聊天过滤",
+        "default": true
+      },
+      "mode": {
+        "type": "string",
+        "description": "过滤模式",
+        "default": "whitelist",
+        "options": [
+          "whitelist",
+          "blacklist"
+        ]
+      },
+      "chats": {
+        "type": "list",
+        "description": "匹配项，如 group:123、user:456、stream:xxx",
+        "default": []
+      }
+    }
+  },
+  "routing": {
+    "type": "object",
+    "description": "运行时路由与去重",
+    "hint": "用于 A_memorix 检索请求去重与兼容路由控制。",
+    "items": {
+      "enable_request_dedup": {
+        "type": "bool",
+        "description": "启用短时间相同检索请求去重",
+        "default": true
+      },
+      "request_dedup_ttl_seconds": {
+        "type": "float",
+        "description": "去重缓存 TTL 秒数",
+        "default": 2.0
       }
     }
   }

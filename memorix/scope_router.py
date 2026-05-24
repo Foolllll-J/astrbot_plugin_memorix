@@ -26,7 +26,7 @@ class ScopeRouter:
         if mode == "group_global":
             if group:
                 return self._sanitize(f"{platform}:group:{group}")
-            return self._sanitize(f"{platform}:user:{sender}")
+            return self._sanitize(f"{platform}:group:{sender}")
         return self._sanitize(platform)
 
     @staticmethod

@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-from astrbot.api import logger
+from ...amemorix.common.logging import get_logger
 
 from ..retrieval import TemporalQueryOptions
 from .search_postprocess import (
@@ -20,6 +20,8 @@ from .search_postprocess import (
     maybe_apply_smart_path_fallback,
 )
 from .time_parser import parse_query_time_range
+
+logger = get_logger("A_Memorix.SearchExecutionService")
 
 
 def _get_config_value(config: Optional[dict], key: str, default: Any = None) -> Any:
@@ -33,10 +35,12 @@ def _get_config_value(config: Optional[dict], key: str, default: Any = None) -> 
             return default
     return current
 
+
 def _sanitize_text(value: Any) -> str:
     if value is None:
         return ""
     return str(value).strip()
+
 
 @dataclass
 class SearchExecutionRequest:
@@ -54,6 +58,7 @@ class SearchExecutionRequest:
     strict_source: bool = False
     use_threshold: bool = True
     enable_ppr: bool = True
+
 
 @dataclass
 class SearchExecutionResult:
@@ -75,6 +80,7 @@ class SearchExecutionResult:
     @property
     def count(self) -> int:
         return len(self.results)
+
 
 class SearchExecutionService:
     """统一检索执行服务。"""
@@ -464,8 +470,6 @@ class SearchExecutionService:
                             )
                         )
                     ):
-                        # Avoid double retrieval: if strict source filter removes everything,
-                        # fall back to the unfiltered scope-wide results.
                         logger.info(
                             "metric.search_source_filter_fallback_count=1 caller=%s source=%s",
                             request.caller,

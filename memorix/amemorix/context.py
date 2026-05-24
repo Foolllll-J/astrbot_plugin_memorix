@@ -6,15 +6,21 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, Optional, Set, Tuple
+from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
 
-from astrbot.api import logger
 from ..core.embedding.api_adapter import EmbeddingAPIAdapter
-from ..core.retrieval import DualPathRetriever, DynamicThresholdFilter, SparseBM25Index
+from ..core.retrieval import DynamicThresholdFilter, DualPathRetriever, SparseBM25Index
 from ..core.storage import GraphStore, MetadataStore, VectorStore
+from ..core.utils.episode_retrieval_service import EpisodeRetrievalService
+from ..core.utils.episode_service import EpisodeService
 from ..core.utils.person_profile_service import PersonProfileService
+from ..core.utils.relation_write_service import RelationWriteService
 
+from .common.logging import get_logger
+from .llm_client import LLMClient
 from .settings import AppSettings
+
+logger = get_logger("A_Memorix.AppContext")
 
 
 @dataclass
@@ -28,11 +34,13 @@ class AppContext:
     retriever: DualPathRetriever
     threshold_filter: DynamicThresholdFilter
     person_profile_service: PersonProfileService
+    relation_write_service: RelationWriteService
+    episode_service: EpisodeService
+    episode_retrieval_service: EpisodeRetrievalService
+    llm_client: LLMClient
     data_dir: Path
     config: Dict[str, Any]
-    provider_bridge: Any = None
-    reinforce_buffer: Set[str] = field(default_factory=set)
-    memory_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    _runtime_self_check_report: Optional[Dict[str, Any]] = None
     _runtime_auto_save: Optional[bool] = None
     _request_dedup_cache: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     _request_dedup_inflight: Dict[str, asyncio.Future] = field(default_factory=dict)
@@ -63,8 +71,7 @@ class AppContext:
         mode = str(filter_config.get("mode", "whitelist")).strip().lower()
         chats = filter_config.get("chats", [])
         if not chats:
-            # 未配置任何过滤规则时，默认允许全部会话
-            return True
+            return mode == "blacklist"
 
         sid = str(stream_id or "")
         gid = str(group_id or "")
@@ -161,18 +168,10 @@ class AppContext:
     async def reinforce_access(self, relation_hashes: list[str]) -> None:
         if not relation_hashes:
             return
-        if not bool(self.get_config("memory.enable_auto_reinforce", True)):
-            return
-
-        limit = int(self.get_config("memory.reinforce_buffer_max_size", 1000) or 1000)
-        limit = max(1, limit)
-
-        async with self.memory_lock:
-            self.reinforce_buffer.update(str(h).strip() for h in relation_hashes if str(h).strip())
-            if len(self.reinforce_buffer) > limit:
-                # 超限时裁剪最旧未知，采用稳定切片确保缓冲区有界。
-                keep = set(list(self.reinforce_buffer)[:limit])
-                self.reinforce_buffer = keep
+        try:
+            self.metadata_store.reinforce_relations(relation_hashes)
+        except Exception as exc:
+            logger.warning("Failed to reinforce relation access: %s", exc)
 
     async def save_all(self) -> None:
         await asyncio.gather(

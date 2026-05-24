@@ -9,7 +9,10 @@ from typing import Any, Dict, Optional, Tuple
 
 from openai import AsyncOpenAI
 
-from astrbot.api import logger
+from .common.logging import get_logger
+
+logger = get_logger("A_Memorix.LLMClient")
+
 
 def _first_env(*keys: str) -> str:
     for key in keys:
@@ -17,6 +20,7 @@ def _first_env(*keys: str) -> str:
         if value:
             return value
     return ""
+
 
 class LLMClient:
     def __init__(

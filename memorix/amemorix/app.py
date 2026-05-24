@@ -1,20 +1,21 @@
-"""FastAPI app factory for standalone runtime."""
+"""FastAPI app factory for embedded/standalone Memorix runtime inside AstrBot."""
 
 from __future__ import annotations
 
-from astrbot.api import logger
 from fastapi import FastAPI
 
 from ..webui.routes_compat import MemorixServer
 from .auth import BearerAuthMiddleware
 from .bootstrap import build_context
 from .common import register_lifecycle_handler
-from .common.logging import setup_logging
+from .common.logging import get_logger, setup_logging
 from .import_write_guard import ImportWriteGuardMiddleware
 from .routers.v1_router import router as v1_router
 from .services.import_task_manager import ImportTaskManager
 from .settings import AppSettings
 from .task_manager import TaskManager
+
+logger = get_logger("A_Memorix.App")
 
 
 def create_app(*, settings: AppSettings) -> FastAPI:
@@ -31,7 +32,7 @@ def create_app(*, settings: AppSettings) -> FastAPI:
     app.state.task_manager = TaskManager(context)
     app.state.import_task_manager = ImportTaskManager(context)
 
-    # 身份验证做的是全局核验，用默认值
+    # Auth is applied globally. It enforces writes by default.
     app.add_middleware(BearerAuthMiddleware)
     app.add_middleware(ImportWriteGuardMiddleware)
     app.include_router(v1_router)
@@ -54,7 +55,7 @@ def create_app(*, settings: AppSettings) -> FastAPI:
             )
         }
 
-    async def _shutdown():
+    async def _shutdown() -> None:
         try:
             await app.state.import_task_manager.stop()
         except Exception as exc:
@@ -68,7 +69,7 @@ def create_app(*, settings: AppSettings) -> FastAPI:
         except Exception as exc:
             logger.warning("Shutdown close failed: %s", exc)
 
-    async def _startup():
+    async def _startup() -> None:
         try:
             await app.state.import_task_manager.start()
         except Exception as exc:

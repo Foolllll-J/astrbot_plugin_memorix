@@ -8,9 +8,12 @@ from typing import Dict, List, Optional, Tuple, Union, Any
 from dataclasses import dataclass
 import numpy as np
 
-from astrbot.api import logger
+from ...amemorix.common.logging import get_logger
 from ..storage import GraphStore
 from ..utils.matcher import AhoCorasick
+
+logger = get_logger("A_Memorix.PersonalizedPageRank")
+
 
 @dataclass
 class PageRankConfig:
@@ -47,6 +50,7 @@ class PageRankConfig:
 
         if self.min_iterations >= self.max_iter:
             raise ValueError(f"min_iterations必须小于max_iter")
+
 
 class PersonalizedPageRank:
     """
@@ -450,6 +454,7 @@ class PersonalizedPageRank:
             f"computations={self._total_computations})"
         )
 
+
 def create_ppr_from_graph(
     graph_store: GraphStore,
     alpha: float = 0.85,
@@ -475,4 +480,3 @@ def create_ppr_from_graph(
         graph_store=graph_store,
         config=config,
     )
-

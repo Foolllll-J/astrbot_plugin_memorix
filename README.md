@@ -9,7 +9,7 @@
 图谱 + 向量混合检索 · 记忆生命周期管理 · 人物画像 · 总结导入 · 内嵌 WebUI
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.16-blue)](https://github.com/Soulter/AstrBot)
-[![Version](https://img.shields.io/badge/version-v0.1.1-green)]()
+[![Version](https://img.shields.io/badge/version-v0.4.0-green)]()
 [![Platforms](https://img.shields.io/badge/platforms-QQ%20%7C%20Telegram%20%7C%20Discord-orange)]()
 
 </div>
@@ -53,6 +53,16 @@
 
 基于 FastAPI 的单页管理界面，默认端口 `8092`（端口冲突自动探测），提供：图谱浏览与关系编辑、记忆管理与来源追踪、回收站恢复、人物画像管理。可选 Bearer Token 鉴权。
 
+### A_memorix 0.6.1 服务层同步
+
+本版本已同步新版 A_memorix API-first 服务层，插件侧保留 AstrBot 生命周期、Provider、scope/source 隔离与 NapCat/OneBot 事件适配。新增能力包括：
+
+- `/v1/query/episode`、`/v1/query/aggregate` 聚合查询链路
+- 关系写入统一走 `RelationWriteService`，关系向量化与图谱边保持一致
+- Episode 后台生成队列与 source 重建状态
+- `/v1/readyz` 仪表盘状态中的 runtime self-check / queue 信息
+- source 严格过滤 + 空结果安全回退，避免跨群记忆误注入
+
 ### 导入中心（可选启用）
 
 新增 `/import` 导入中心（默认关闭，需手动在配置文件处开启 `web.import.enabled=true`）。页面可进行如下三种导入：
@@ -72,16 +82,16 @@
 ① 作用域路由 ── 按 scope.mode 确定记忆归属
   │
   ▼
-② 消息写入 ── transcript + 段落元数据 + 向量/稀疏索引 + 实体关系图谱
+② 原始消息写入 ── 仅进入 transcript，避免碎片消息直接污染向量库/图谱
   │
   ▼
-③ 检索注入 ── LLM 请求时混合检索相关记忆，注入 System Prompt
+③ 总结提炼 ── 自动/手动总结会话，生成段落、关系、Episode 并写入索引
   │
   ▼
-④ 响应回写 ── AI 回复同步写入记忆
+④ 检索注入 ── LLM 请求时按 scope/source 混合检索记忆，注入当前用户消息上下文
   │
   ▼
-⑤ 后台维护 ── 衰减 / 冻结 / 剪枝 / 画像刷新 / 向量持久化
+⑤ 后台维护 ── 衰减 / 冻结 / 剪枝 / 画像刷新 / Episode 生成 / 向量持久化
 ```
 
 ## 本插件基于 A_Dawn 的 A_Memorix 设计理念开发，并针对 AstrBot 做了完整适配。

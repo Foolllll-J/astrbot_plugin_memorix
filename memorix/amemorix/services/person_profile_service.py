@@ -69,3 +69,4 @@ class PersonProfileApiService:
         size = page_size if page_size is not None else default_size
         size = max(1, min(max_size, int(size)))
         return self.ctx.metadata_store.list_person_registry(keyword=keyword, page=page, page_size=size)
+

@@ -8,10 +8,13 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from astrbot.api import logger
+from .common.logging import get_logger
+
+logger = get_logger("A_Memorix.Auth")
 
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 PUBLIC_PATHS = {"/healthz", "/readyz"}
+
 
 def _extract_bearer(auth_header: str) -> Optional[str]:
     if not auth_header:
@@ -22,8 +25,10 @@ def _extract_bearer(auth_header: str) -> Optional[str]:
     token = parts[1].strip()
     return token or None
 
+
 def _token_set(values: Iterable[str]) -> Set[str]:
     return {str(v).strip() for v in values if str(v).strip()}
+
 
 class BearerAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):

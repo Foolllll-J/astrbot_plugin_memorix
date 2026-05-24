@@ -10,7 +10,11 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import tomllib
-from astrbot.api import logger
+
+from .common.logging import get_logger
+
+logger = get_logger("A_Memorix.Settings")
+
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "server": {"host": "0.0.0.0", "port": 8082, "workers": 1},
@@ -22,20 +26,17 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "cors": {"allow_origins": []},
     "storage": {"data_dir": "./data"},
-    "provider": {
-        "chat_provider_id": "",
-    },
     "embedding": {
-        "enabled": False,
         "dimension": 1024,
         "quantization_type": "int8",
         "batch_size": 32,
         "max_concurrent": 5,
+        "model_name": "auto",
         "retry": {"max_attempts": 5, "max_wait_seconds": 30, "min_wait_seconds": 2},
-        "openapi": {
-            "base_url": "",
+        "openai": {
+            "base_url": "https://api.openai.com/v1",
             "api_key": "",
-            "model": "",
+            "model": "text-embedding-3-large",
             "timeout_seconds": 30,
             "max_retries": 3,
         },
@@ -47,10 +48,17 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "alpha": 0.5,
         "enable_ppr": True,
         "ppr_alpha": 0.85,
+        "ppr_timeout_seconds": 1.5,
         "ppr_concurrency_limit": 4,
         "enable_parallel": True,
         "relation_semantic_fallback": True,
         "relation_fallback_min_score": 0.3,
+        "relation_vectorization": {
+            "enabled": True,
+            "backfill_enabled": True,
+            "backfill_batch_size": 50,
+            "max_retry": 3,
+        },
         "temporal": {
             "enabled": True,
             "allow_created_fallback": True,
@@ -58,13 +66,29 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "default_top_k": 10,
             "max_scan": 1000,
         },
-        "auto_route": {
-            "enabled": True,
-            "enable_time_intent": True,
+        "aggregate": {
+            "rrf_k": 60,
+            "weights": {"search": 1.0, "time": 1.0, "episode": 1.0},
         },
         "search": {
             "smart_fallback": {"enabled": True, "threshold": 0.6},
             "safe_content_dedup": {"enabled": True},
+            "relation_intent": {
+                "enabled": True,
+                "alpha_override": 0.35,
+                "relation_candidate_multiplier": 4,
+                "preserve_top_relations": 3,
+                "force_relation_sparse": True,
+                "pair_predicate_rerank_enabled": True,
+                "pair_predicate_limit": 3,
+            },
+            "graph_recall": {
+                "enabled": True,
+                "candidate_k": 24,
+                "max_hop": 1,
+                "allow_two_hop_pair": True,
+                "max_paths": 4,
+            },
         },
         "time": {"skip_threshold_when_query_empty": True},
         "sparse": {
@@ -108,21 +132,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "auto_save_interval_minutes": 5,
         "debug": False,
     },
-    "web": {
-        "import": {
-            "enabled": False,
-            "max_queue_size": 20,
-            "max_files_per_task": 200,
-            "max_file_size_mb": 20,
-            "max_paste_chars": 200000,
-            "default_file_concurrency": 2,
-            "default_chunk_concurrency": 4,
-            "path_aliases": {
-                "raw": "raw",
-                "plugin_data": ".",
-            },
-        }
-    },
     "memory": {
         "enabled": True,
         "half_life_hours": 24.0,
@@ -135,37 +144,18 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "max_weight": 10.0,
         "revive_boost_weight": 0.5,
         "auto_protect_ttl_hours": 24.0,
-        "orphan": {
-            "enable_soft_delete": True,
-            "entity_retention_days": 7.0,
-            "paragraph_retention_days": 7.0,
-            "sweep_grace_hours": 24.0,
-        },
     },
     "summarization": {
         "enabled": True,
-        "source_mode": "hybrid",
-        "chat_provider_id": "",
-        "model_name": "",
+        "model_name": "auto",
         "context_length": 50,
         "include_personality": True,
         "default_knowledge_type": "narrative",
-        "auto_import": {
-            "enabled": True,
-            "after_reply_only": True,
-            "min_new_messages": 12,
-            "cooldown_minutes": 30,
-        },
-    },
-    "schedule": {
-        "enabled": True,
-        "import_times": ["04:00"],
     },
     "person_profile": {
         "enabled": True,
         "opt_in_required": True,
         "default_injection_enabled": False,
-        "global_injection_enabled": False,
         "profile_ttl_minutes": 360.0,
         "refresh_interval_minutes": 30,
         "active_window_hours": 72.0,
@@ -176,6 +166,19 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "page_size_max": 100,
             "match_strategy": "contains",
         },
+    },
+    "episode": {
+        "enabled": True,
+        "generation_enabled": True,
+        "generation_interval_seconds": 30,
+        "generation_batch_size": 20,
+        "max_retry": 3,
+        "window_seconds": 3600,
+        "min_group_size": 2,
+        "max_group_size": 24,
+        "segmentation_model": "auto",
+        "segmentation_temperature": 0.2,
+        "segmentation_max_tokens": 1500,
     },
     "filter": {"enabled": True, "mode": "whitelist", "chats": []},
     "routing": {
@@ -192,6 +195,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
 }
 
+
 def _deep_merge(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
     out = copy.deepcopy(base)
     for key, value in (patch or {}).items():
@@ -200,6 +204,7 @@ def _deep_merge(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
         else:
             out[key] = value
     return out
+
 
 def _parse_env_value(raw: str) -> Any:
     text = raw.strip()
@@ -223,6 +228,7 @@ def _parse_env_value(raw: str) -> Any:
             return text
     return text
 
+
 def _set_nested(config: Dict[str, Any], path: list[str], value: Any) -> None:
     cur: Dict[str, Any] = config
     for key in path[:-1]:
@@ -232,6 +238,7 @@ def _set_nested(config: Dict[str, Any], path: list[str], value: Any) -> None:
             cur[key] = existing
         cur = existing
     cur[path[-1]] = value
+
 
 def _apply_env_overrides(config: Dict[str, Any], prefix: str = "AMEMORIX__") -> Dict[str, Any]:
     out = copy.deepcopy(config)
@@ -247,6 +254,7 @@ def _apply_env_overrides(config: Dict[str, Any], prefix: str = "AMEMORIX__") -> 
         _set_nested(out, parts, _parse_env_value(env_value))
     return out
 
+
 def _overlay_non_empty(base: Dict[str, Any], overlay: Dict[str, Any]) -> Dict[str, Any]:
     out = copy.deepcopy(base)
     for key, value in (overlay or {}).items():
@@ -260,6 +268,7 @@ def _overlay_non_empty(base: Dict[str, Any], overlay: Dict[str, Any]) -> Dict[st
         out[key] = value
     return out
 
+
 def _first_non_empty_env(keys: list[str]) -> Optional[str]:
     for key in keys:
         value = str(os.getenv(key, "") or "").strip()
@@ -267,14 +276,6 @@ def _first_non_empty_env(keys: list[str]) -> Optional[str]:
             return value
     return None
 
-def _normalize_openai_base_url(raw_url: str) -> str:
-    value = str(raw_url or "").strip()
-    if not value:
-        return ""
-    normalized = value.rstrip("/")
-    if normalized.lower().endswith("/v1"):
-        return normalized
-    return f"{normalized}/v1"
 
 def resolve_openapi_endpoint_config(config: Dict[str, Any], *, section: str = "embedding") -> Dict[str, Any]:
     """
@@ -329,16 +330,14 @@ def resolve_openapi_endpoint_config(config: Dict[str, Any], *, section: str = "e
             merged[field] = _parse_env_value(env_value)
 
     # Sensible defaults for OpenAI-compatible providers.
-    base_url = str(merged.get("base_url", "") or "").strip()
-    if not base_url:
+    if not str(merged.get("base_url", "") or "").strip():
         merged["base_url"] = "https://api.openai.com/v1"
-    else:
-        merged["base_url"] = _normalize_openai_base_url(base_url)
     if "timeout_seconds" not in merged:
         merged["timeout_seconds"] = 30
     if "max_retries" not in merged:
         merged["max_retries"] = 3
     return merged
+
 
 def mask_sensitive(config: Dict[str, Any]) -> Dict[str, Any]:
     out = copy.deepcopy(config)
@@ -362,6 +361,7 @@ def mask_sensitive(config: Dict[str, Any]) -> Dict[str, Any]:
             if isinstance(endpoint_cfg, dict) and "api_key" in endpoint_cfg:
                 endpoint_cfg["api_key"] = _mask(endpoint_cfg["api_key"])
     return out
+
 
 @dataclass(slots=True)
 class AppSettings:

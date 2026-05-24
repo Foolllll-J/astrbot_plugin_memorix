@@ -1,13 +1,12 @@
-"""Standalone operation APIs (/v1/*)."""
+"""New standalone operation APIs (/v1/*)."""
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
+import time
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Request, UploadFile
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 
 from ..services import (
     DeleteService,
@@ -15,6 +14,7 @@ from ..services import (
     PersonProfileApiService,
     QueryService,
 )
+from ...core.utils.runtime_self_check import ensure_runtime_self_check
 
 router = APIRouter(prefix="/v1", tags=["v1"])
 
@@ -23,37 +23,6 @@ class ImportTaskCreateRequest(BaseModel):
     mode: str = Field(default="text")
     payload: Any
     options: Dict[str, Any] = Field(default_factory=dict)
-
-
-class ImportPasteRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    content: str
-    name: Optional[str] = None
-    knowledge_type: Optional[str] = None
-
-
-class ImportRawScanRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    alias: Optional[str] = "raw"
-    relative_path: Optional[str] = ""
-    glob: Optional[str] = "*"
-    recursive: Optional[bool] = True
-    knowledge_type: Optional[str] = None
-
-
-class ImportRetryRequest(BaseModel):
-    input_mode: Optional[str] = None
-    glob: Optional[str] = None
-    recursive: Optional[bool] = None
-    knowledge_type: Optional[str] = None
-
-
-class ImportPathResolveRequest(BaseModel):
-    alias: str
-    relative_path: Optional[str] = ""
-    must_exist: Optional[bool] = True
 
 
 class SummaryTaskCreateRequest(BaseModel):
@@ -87,6 +56,31 @@ class QueryRelationRequest(BaseModel):
     object: str = ""
 
 
+class QueryEpisodeRequest(BaseModel):
+    query: str = ""
+    time_from: Optional[str] = None
+    time_to: Optional[str] = None
+    person: Optional[str] = None
+    source: Optional[str] = None
+    top_k: Optional[int] = None
+    include_paragraphs: bool = False
+
+
+class QueryAggregateRequest(BaseModel):
+    query: str = ""
+    time_from: Optional[str] = None
+    time_to: Optional[str] = None
+    person: Optional[str] = None
+    source: Optional[str] = None
+    top_k: Optional[int] = None
+    mix: bool = True
+    mix_top_k: Optional[int] = None
+
+
+class EpisodeRebuildRequest(BaseModel):
+    source: str
+
+
 class DeleteParagraphRequest(BaseModel):
     paragraph_hash: str
 
@@ -109,6 +103,10 @@ class MemoryProtectRequest(BaseModel):
 
 
 class MemoryReinforceRequest(BaseModel):
+    id: str
+
+
+class MemoryFreezeRequest(BaseModel):
     id: str
 
 
@@ -157,39 +155,60 @@ def _task_manager(request: Request):
     return manager
 
 
-def _import_manager(request: Request):
-    manager = getattr(request.app.state, "import_task_manager", None)
-    if manager is None:
-        raise HTTPException(status_code=503, detail="Import task manager not initialized")
-    return manager
-
-
-def _import_enabled(request: Request) -> bool:
-    return bool(_ctx(request).get_config("web.import.enabled", False))
-
-
-def _ensure_import_enabled(request: Request) -> None:
-    if not _import_enabled(request):
-        raise HTTPException(status_code=404, detail="导入功能未启用")
-
-
 def _task_or_404(task):
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
 
 
-def _load_import_guide_text() -> Dict[str, Any]:
-    guide_path = (Path(__file__).resolve().parents[2] / "IMPORT_GUIDE.md").resolve()
-    if not guide_path.exists():
-        raise HTTPException(status_code=404, detail=f"导入文档不存在: {guide_path}")
-    text = guide_path.read_text(encoding="utf-8")
-    return {
-        "source": "local",
-        "url": "",
-        "path": str(guide_path),
-        "content": text,
-    }
+def _record_query_event(request: Request, query_type: str) -> None:
+    now = time.time()
+    events = list(getattr(request.app.state, "query_events", []) or [])
+    cutoff = now - 300.0
+    events = [item for item in events if float(item.get("ts", 0.0) or 0.0) >= cutoff]
+    events.append({"ts": now, "type": str(query_type or "query")})
+    request.app.state.query_events = events
+
+
+def _recent_query_counts(request: Request, *, seconds: float = 60.0) -> Dict[str, int]:
+    now = time.time()
+    cutoff = now - max(1.0, float(seconds))
+    counts: Dict[str, int] = {"total": 0}
+    events = []
+    for item in list(getattr(request.app.state, "query_events", []) or []):
+        ts = float(item.get("ts", 0.0) or 0.0)
+        if ts < cutoff:
+            continue
+        kind = str(item.get("type") or "query")
+        counts[kind] = counts.get(kind, 0) + 1
+        counts["total"] += 1
+        events.append(item)
+    request.app.state.query_events = events
+    return counts
+
+
+def _status_from_async_summary(summary: Dict[str, Any]) -> str:
+    counts = summary.get("counts") or {}
+    latest = summary.get("latest") or {}
+    if int(counts.get("running", 0) or 0) > 0:
+        return "running"
+    if int(counts.get("queued", 0) or 0) > 0:
+        return "waiting"
+    latest_status = str(latest.get("status") or "").strip().lower()
+    if latest_status in {"failed", "canceled"}:
+        return latest_status
+    return "ready"
+
+
+def _status_from_episode_summary(summary: Dict[str, Any]) -> str:
+    counts = (summary or {}).get("counts") or {}
+    if int(counts.get("running", 0) or 0) > 0:
+        return "running"
+    if int(counts.get("pending", 0) or 0) > 0:
+        return "waiting"
+    if int(counts.get("failed", 0) or 0) > 0:
+        return "failed"
+    return "ready"
 
 
 @router.post("/import/tasks")
@@ -203,144 +222,66 @@ async def create_import_task(request: Request, body: ImportTaskCreateRequest):
     }
 
 
-@router.post("/import/tasks/upload")
-async def create_import_task_upload(
-    request: Request,
-    files: Optional[list[UploadFile]] = File(default=None),
-    files_array: Optional[list[UploadFile]] = File(default=None, alias="files[]"),
-    payload: str = Form("{}"),
-):
-    _ensure_import_enabled(request)
-    merged_files = list(files or []) + list(files_array or [])
-    if not merged_files:
-        raise HTTPException(status_code=400, detail="至少需要上传一个文件")
-    try:
-        payload_obj = json.loads(payload or "{}")
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="payload 必须为合法 JSON") from exc
-    if not isinstance(payload_obj, dict):
-        raise HTTPException(status_code=400, detail="payload 必须为 JSON 对象")
-    manager = _import_manager(request)
-    try:
-        task = await manager.create_upload_task(merged_files, payload_obj)
-        return {"success": True, "task": task}
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.post("/import/tasks/paste")
-async def create_import_task_paste(request: Request, body: ImportPasteRequest):
-    _ensure_import_enabled(request)
-    manager = _import_manager(request)
-    try:
-        task = await manager.create_paste_task(body.model_dump())
-        return {"success": True, "task": task}
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.post("/import/tasks/raw_scan")
-async def create_import_task_raw_scan(request: Request, body: ImportRawScanRequest):
-    _ensure_import_enabled(request)
-    manager = _import_manager(request)
-    try:
-        task = await manager.create_raw_scan_task(body.model_dump())
-        return {"success": True, "task": task}
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.get("/import/tasks")
-async def list_import_tasks(request: Request, limit: int = Query(50, ge=1, le=200)):
-    _ensure_import_enabled(request)
-    manager = _import_manager(request)
-    items = await manager.list_tasks(limit=limit)
-    return {"success": True, "items": items}
-
-
 @router.get("/import/tasks/{task_id}")
-async def get_import_task(request: Request, task_id: str, include_chunks: bool = Query(False)):
-    if _import_enabled(request):
-        manager = _import_manager(request)
-        task = await manager.get_task(task_id, include_chunks=include_chunks)
-        if task is not None:
-            return {"success": True, "task": task}
-    legacy_manager = _task_manager(request)
-    return _task_or_404(legacy_manager.get_task(task_id))
+async def get_import_task(request: Request, task_id: str):
+    manager = _task_manager(request)
+    return _task_or_404(manager.get_task(task_id))
 
 
-@router.get("/import/tasks/{task_id}/files/{file_id}/chunks")
-async def get_import_chunks(
-    request: Request,
-    task_id: str,
-    file_id: str,
-    offset: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500),
-):
-    _ensure_import_enabled(request)
-    manager = _import_manager(request)
-    data = await manager.get_chunks(task_id, file_id, offset=offset, limit=limit)
-    if data is None:
-        raise HTTPException(status_code=404, detail="任务或文件不存在")
-    return {"success": True, **data}
+@router.get("/dashboard/status")
+async def dashboard_status(request: Request):
+    ctx = _ctx(request)
+    stats = await QueryService(ctx).stats()
+    metadata_stats = stats.get("metadata_store") or {}
+    query_counts = _recent_query_counts(request)
+    import_summary = ctx.metadata_store.get_async_task_summary(task_type="import")
+    episode_summary = ctx.metadata_store.get_episode_source_rebuild_summary(failed_limit=5)
+    runtime_report = getattr(ctx, "_runtime_self_check_report", None)
+    runtime_status = "unknown"
+    if isinstance(runtime_report, dict):
+        runtime_status = "ready" if runtime_report.get("ok") else "failed"
 
-
-@router.post("/import/tasks/{task_id}/cancel")
-async def cancel_import_task(request: Request, task_id: str):
-    _ensure_import_enabled(request)
-    manager = _import_manager(request)
-    task = await manager.cancel_task(task_id)
-    if task is None:
-        raise HTTPException(status_code=404, detail="任务不存在")
-    return {"success": True, "task": task}
-
-
-@router.post("/import/tasks/{task_id}/retry_failed")
-async def retry_import_task_failed(
-    request: Request,
-    task_id: str,
-    body: Optional[ImportRetryRequest] = Body(default=None),
-):
-    _ensure_import_enabled(request)
-    manager = _import_manager(request)
-    overrides = body.model_dump(exclude_none=True) if body else {}
-    try:
-        task = await manager.retry_failed(task_id, overrides=overrides)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if task is None:
-        raise HTTPException(status_code=404, detail="任务不存在")
-    return {"success": True, "task": task}
-
-
-@router.get("/import/path_aliases")
-async def get_import_path_aliases(request: Request):
-    _ensure_import_enabled(request)
-    manager = _import_manager(request)
-    aliases = manager.get_path_aliases()
-    filtered = {k: v for k, v in aliases.items() if k in {"raw", "plugin_data"}}
-    return {"success": True, "items": filtered}
-
-
-@router.post("/import/path_resolve")
-async def resolve_import_path(request: Request, body: ImportPathResolveRequest):
-    _ensure_import_enabled(request)
-    manager = _import_manager(request)
-    try:
-        data = await manager.resolve_path_request(body.model_dump())
-        return {"success": True, **data}
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.get("/import/guide")
-async def get_import_guide(request: Request):
-    _ensure_import_enabled(request)
-    return {"success": True, **_load_import_guide_text()}
+    return {
+        "updated_at": time.time(),
+        "stats": stats,
+        "services": {
+            "graph": {
+                "status": "ready",
+                "nodes": stats.get("graph_store", {}).get("num_nodes", 0),
+                "relations": stats.get("graph_store", {}).get("num_edges", 0),
+                "vectors": stats.get("vector_store", {}).get("num_vectors", 0),
+            },
+            "query": {
+                "status": "ready",
+                "recent_seconds": 60,
+                "recent_count": query_counts.get("aggregate", 0),
+                "recent_total_count": query_counts.get("total", 0),
+            },
+            "episode": {
+                "status": _status_from_episode_summary(episode_summary),
+                "count": int(metadata_stats.get("episode_count", 0) or 0),
+                "queue": episode_summary,
+            },
+            "import": {
+                "status": _status_from_async_summary(import_summary),
+                "latest_task": import_summary.get("latest"),
+                "counts": import_summary.get("counts"),
+            },
+            "person": {
+                "status": "ready",
+                "profile_count": int(metadata_stats.get("person_profile_count", 0) or 0),
+            },
+            "runtime": {
+                "status": runtime_status,
+                "report": runtime_report,
+            },
+        },
+    }
 
 
 @router.post("/query/search")
 async def query_search(request: Request, body: QuerySearchRequest):
+    _record_query_event(request, "search")
     service = QueryService(_ctx(request))
     try:
         return await service.search(query=body.query, top_k=body.top_k)
@@ -350,6 +291,7 @@ async def query_search(request: Request, body: QuerySearchRequest):
 
 @router.post("/query/time")
 async def query_time(request: Request, body: QueryTimeRequest):
+    _record_query_event(request, "time")
     service = QueryService(_ctx(request))
     try:
         return await service.time_search(
@@ -366,6 +308,7 @@ async def query_time(request: Request, body: QueryTimeRequest):
 
 @router.post("/query/entity")
 async def query_entity(request: Request, body: QueryEntityRequest):
+    _record_query_event(request, "entity")
     service = QueryService(_ctx(request))
     try:
         return await service.entity(entity_name=body.entity_name)
@@ -375,9 +318,47 @@ async def query_entity(request: Request, body: QueryEntityRequest):
 
 @router.post("/query/relation")
 async def query_relation(request: Request, body: QueryRelationRequest):
+    _record_query_event(request, "relation")
     service = QueryService(_ctx(request))
     try:
         return await service.relation(subject=body.subject, predicate=body.predicate, obj=body.object)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/query/episode")
+async def query_episode(request: Request, body: QueryEpisodeRequest):
+    _record_query_event(request, "episode")
+    service = QueryService(_ctx(request))
+    try:
+        return await service.episode(
+            query=body.query,
+            time_from=body.time_from,
+            time_to=body.time_to,
+            person=body.person,
+            source=body.source,
+            top_k=body.top_k,
+            include_paragraphs=body.include_paragraphs,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/query/aggregate")
+async def query_aggregate(request: Request, body: QueryAggregateRequest):
+    _record_query_event(request, "aggregate")
+    service = QueryService(_ctx(request))
+    try:
+        return await service.aggregate(
+            query=body.query,
+            time_from=body.time_from,
+            time_to=body.time_to,
+            person=body.person,
+            source=body.source,
+            top_k=body.top_k,
+            mix=body.mix,
+            mix_top_k=body.mix_top_k,
+        )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -386,6 +367,63 @@ async def query_relation(request: Request, body: QueryRelationRequest):
 async def query_stats(request: Request):
     service = QueryService(_ctx(request))
     return await service.stats()
+
+
+@router.post("/episode/rebuild")
+async def episode_rebuild(request: Request, body: EpisodeRebuildRequest):
+    ctx = _ctx(request)
+    source = str(body.source or "").strip()
+    if not source:
+        raise HTTPException(status_code=400, detail="source is required")
+
+    queue_row = ctx.metadata_store.get_episode_source_rebuild(source)
+    queue_status = str((queue_row or {}).get("status", "") or "").strip().lower()
+    requested_at = (queue_row or {}).get("requested_at")
+    managed_queue = False
+
+    if queue_status == "running":
+        raise HTTPException(status_code=409, detail="Episode source rebuild is already running")
+    if queue_status in {"pending", "failed"}:
+        managed_queue = ctx.metadata_store.mark_episode_source_running(
+            source,
+            requested_at=requested_at,
+        )
+        if not managed_queue:
+            latest = ctx.metadata_store.get_episode_source_rebuild(source)
+            latest_status = str((latest or {}).get("status", "") or "").strip().lower()
+            if latest_status == "running":
+                raise HTTPException(status_code=409, detail="Episode source rebuild is already running")
+            requested_at = None
+
+    try:
+        result = await ctx.episode_service.rebuild_source(source)
+        if managed_queue:
+            ctx.metadata_store.mark_episode_source_done(source, requested_at=requested_at)
+        return result
+    except Exception as exc:
+        if managed_queue:
+            ctx.metadata_store.mark_episode_source_failed(
+                source,
+                str(exc),
+                requested_at=requested_at,
+            )
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/episode/{episode_id}")
+async def episode_get(request: Request, episode_id: str, include_paragraphs: bool = Query(False)):
+    ctx = _ctx(request)
+    episode = ctx.metadata_store.get_episode_by_id(episode_id)
+    if not episode:
+        raise HTTPException(status_code=404, detail="Episode not found")
+    if include_paragraphs:
+        episode["paragraphs"] = ctx.metadata_store.get_episode_paragraphs(episode_id)
+    return episode
+
+
+@router.post("/runtime/self_check")
+async def runtime_self_check(request: Request, force: bool = Query(False)):
+    return await ensure_runtime_self_check(_ctx(request), force=force)
 
 
 @router.post("/delete/paragraph")
@@ -441,6 +479,12 @@ async def memory_protect(request: Request, body: MemoryProtectRequest):
 async def memory_reinforce(request: Request, body: MemoryReinforceRequest):
     service = MemoryService(_ctx(request))
     return await service.reinforce(query_or_hash=body.id)
+
+
+@router.post("/memory/freeze")
+async def memory_freeze(request: Request, body: MemoryFreezeRequest):
+    service = MemoryService(_ctx(request))
+    return await service.freeze(query_or_hash=body.id)
 
 
 @router.post("/memory/restore")

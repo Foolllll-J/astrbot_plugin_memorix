@@ -18,7 +18,7 @@ from .memorix.tasks.maintenance_scheduler import MaintenanceScheduler
 from .memorix.webui import EmbeddedWebUIServer
 
 
-@register("astrbot_plugin_memorix", "Codex", "A_memorix memory plugin with embedded WebUI", "0.1.0")
+@register("astrbot_plugin_memorix", "Codex", "A_memorix memory plugin with embedded WebUI", "0.4.0")
 class MemorixPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)

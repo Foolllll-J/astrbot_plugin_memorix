@@ -14,8 +14,10 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from astrbot.api import logger
+from ...amemorix.common.logging import get_logger
 from ..storage import MetadataStore
+
+logger = get_logger("A_Memorix.SparseBM25")
 
 try:
     import jieba  # type: ignore
@@ -24,6 +26,7 @@ try:
 except Exception:
     HAS_JIEBA = False
     jieba = None
+
 
 @dataclass
 class SparseBM25Config:
@@ -61,6 +64,7 @@ class SparseBM25Config:
             raise ValueError(f"sparse.mode 非法: {self.mode}")
         if self.tokenizer_mode not in {"jieba", "mixed", "char_2gram"}:
             raise ValueError(f"sparse.tokenizer_mode 非法: {self.tokenizer_mode}")
+
 
 class SparseBM25Index:
     """
@@ -396,4 +400,3 @@ class SparseBM25Index:
             "has_jieba": HAS_JIEBA,
             "doc_count": doc_count,
         }
-
