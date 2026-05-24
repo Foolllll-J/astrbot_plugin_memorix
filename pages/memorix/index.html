@@ -100,8 +100,8 @@
         height: 100%;
         min-height: 0;
         display: grid;
-        grid-template-columns: 118px minmax(0, 1fr) 380px;
-        gap: 22px;
+        grid-template-columns: 118px minmax(0, 1fr);
+        gap: 0;
         padding: 14px 16px;
         border-radius: 0;
         background: var(--shell);
@@ -213,16 +213,13 @@
         text-align: center;
       }
 
-      .workspace,
-      .aside {
+      .workspace {
         min-height: 0;
         overflow: hidden;
-      }
-
-      .workspace {
         display: grid;
         grid-template-rows: auto 1fr;
-        gap: 16px;
+        gap: 14px;
+        padding-left: 18px;
       }
 
       .topbar {
@@ -289,7 +286,6 @@
 
       .nav,
       .view-stack,
-      .detail-panel,
       .log,
       .json,
       .settings-groups {
@@ -299,7 +295,6 @@
 
       .nav::-webkit-scrollbar,
       .view-stack::-webkit-scrollbar,
-      .detail-panel::-webkit-scrollbar,
       .log::-webkit-scrollbar,
       .json::-webkit-scrollbar,
       .settings-groups::-webkit-scrollbar {
@@ -1083,13 +1078,39 @@
       }
 
       .aside {
-        display: grid;
-        grid-template-rows: auto 1fr auto;
-        gap: 14px;
+        display: none;
       }
 
-      .responsive-aside-slot {
-        display: none;
+      .detail-drawer {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: min(420px, 100vw);
+        background: var(--surface);
+        border-left: 1px solid var(--border);
+        box-shadow: -16px 0 38px rgba(0, 0, 0, 0.12);
+        transform: translateX(100%);
+        transition: transform 0.22s ease-out;
+        display: flex;
+        flex-direction: column;
+        z-index: 30;
+      }
+
+      .detail-drawer.show {
+        transform: translateX(0);
+      }
+
+      .detail-drawer .side-head {
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .detail-drawer .side-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+        padding: 14px 16px;
       }
 
       .side-card {
@@ -1116,34 +1137,16 @@
         padding: 12px 14px;
       }
 
-      .runtime-card .side-head {
-        padding: 10px 14px;
-      }
-
-      .runtime-card .side-body {
-        padding: 10px 12px 12px;
-      }
-
       .runtime-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 7px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
       }
 
       .runtime-grid .tag {
-        width: 100%;
-        justify-content: center;
         min-width: 0;
-        min-height: 24px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .detail-panel {
-        min-height: 0;
-        overflow: auto;
-        overscroll-behavior: contain;
+        min-height: 26px;
+        padding: 4px 12px;
       }
 
       .faq-item {
@@ -1264,11 +1267,15 @@
 
       @media (max-width: 1480px) {
         .shell {
-          grid-template-columns: 88px minmax(0, 1fr) clamp(300px, 26vw, 340px);
+          grid-template-columns: 88px minmax(0, 1fr);
           height: 100%;
           min-height: 0;
-          gap: 14px;
-          padding: 12px 14px;
+          gap: 0;
+          padding: 10px 12px;
+        }
+
+        .workspace {
+          padding-left: 14px;
         }
 
         .sidebar {
@@ -1303,16 +1310,8 @@
           height: auto;
         }
 
-        .aside {
-          display: grid;
-        }
-
         .topbar {
           flex-wrap: wrap;
-        }
-
-        .token-box {
-          width: 260px;
         }
 
         .grid-2,
@@ -1349,32 +1348,11 @@
 
       @media (max-width: 1200px) {
         .shell {
-          grid-template-columns: 88px minmax(0, 1fr);
+          grid-template-columns: 72px minmax(0, 1fr);
         }
 
-        .shell > .aside {
-          display: none;
-        }
-
-        .responsive-aside-slot {
-          display: block;
-          margin-top: 16px;
-        }
-
-        .responsive-aside-slot > .aside {
-          display: grid;
-          height: auto;
-          min-height: 0;
-          grid-template-rows: auto auto auto;
-          overflow: visible;
-        }
-
-        .responsive-aside-slot .detail-panel {
-          overflow: visible;
-        }
-
-        .responsive-aside-slot .runtime-grid {
-          grid-template-columns: repeat(4, minmax(0, 1fr));
+        .workspace {
+          padding-left: 12px;
         }
       }
 
@@ -1418,19 +1396,11 @@
           grid-template-columns: 1fr;
         }
 
-        #graph-canvas {
-          height: 420px;
-        }
-
         .grid-3 {
           grid-template-columns: 1fr;
         }
 
         .memory-kpis {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-
-        .responsive-aside-slot .runtime-grid {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
       }
@@ -1490,6 +1460,20 @@
               <div class="notice" style="margin-top:16px">
                 <strong id="runtime-banner">运行时自检</strong>
                 <button class="btn icon" id="runtime-refresh" title="刷新自检">↻</button>
+              </div>
+
+              <div class="band">
+                <div class="panel-title">
+                  <h2>运行概况</h2>
+                  <span id="runtime-chip" class="tag warn">unknown</span>
+                </div>
+                <div class="runtime-grid">
+                  <span class="tag">API /api</span>
+                  <span class="tag">API /v1</span>
+                  <span class="tag ok" id="token-chip">Dashboard 已鉴权</span>
+                  <span class="tag ok" id="server-token-chip">Dashboard 已鉴权</span>
+                  <span class="tag" id="autosave-chip">auto-save -</span>
+                </div>
               </div>
 
               <div class="band">
@@ -1805,55 +1789,16 @@
                 <div id="activity-log" class="log"></div>
               </div>
             </section>
-
-            <div id="responsive-aside-slot" class="responsive-aside-slot"></div>
           </div>
         </main>
-
-        <aside class="aside">
-          <div class="side-card runtime-card">
-            <div class="side-head">
-              <strong>运行概况</strong>
-              <span id="runtime-chip" class="tag warn">unknown</span>
-            </div>
-            <div class="side-body">
-              <div class="runtime-grid">
-                <span class="tag">API /api</span>
-                <span class="tag">API /v1</span>
-                <span class="tag ok" id="token-chip">Dashboard 已鉴权</span>
-                <span class="tag ok" id="server-token-chip">Dashboard 已鉴权</span>
-                <span class="tag" id="autosave-chip">auto-save -</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="side-card detail-panel">
-            <div class="side-head">
-              <strong id="detail-title">辅助面板</strong>
-              <button class="btn icon ghost" id="detail-clear" title="清空详情">×</button>
-            </div>
-            <div id="detail-body" class="side-body">
-              <div class="faq-item open">
-                <button class="faq-q">如何开始？<span>⌄</span></button>
-                <div class="faq-a">先载入图谱，或在查询页使用聚合查询。写入类操作由 AstrBot Dashboard 登录态保护。</div>
-              </div>
-              <div class="faq-item">
-                <button class="faq-q">Episode 从哪里来？<span>⌄</span></button>
-                <div class="faq-a">新增或删除段落会将 source 放入重建队列；也可以在情景页手动重建。</div>
-              </div>
-              <div class="faq-item">
-                <button class="faq-q">聚合查询包含什么？<span>⌄</span></button>
-                <div class="faq-a">聚合查询会融合语义、时间和 episode 分支，并输出混合排序结果。</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="side-card">
-            <div class="side-head"><strong>操作日志</strong></div>
-            <div class="side-body"><div id="activity-log-aside" class="log"></div></div>
-          </div>
-        </aside>
       </div>
+    </div>
+    <div id="detail-drawer" class="detail-drawer" aria-hidden="true">
+      <div class="side-head">
+        <strong id="detail-title">详情面板</strong>
+        <button class="btn icon ghost" id="detail-clear" title="关闭">×</button>
+      </div>
+      <div id="detail-body" class="side-body"></div>
     </div>
     <div id="toast" class="toast"></div>
     <div id="candidate-menu" class="candidate-menu" role="listbox"></div>
@@ -2030,29 +1975,24 @@
         }
       }
 
-      function relocateAside() {
-        const aside = document.querySelector(".aside");
-        const shell = document.querySelector(".shell");
-        const slot = $("responsive-aside-slot");
-        if (!aside || !shell || !slot) return;
-        const inline = window.matchMedia("(max-width: 1200px)").matches;
-        const target = inline ? slot : shell;
-        if (aside.parentElement !== target) {
-          target.appendChild(aside);
-        }
+      function handleViewportResize() {
         if (state.graph.network) {
           setTimeout(() => fitGraphView(false), 80);
         }
       }
 
       function revealDetailPanel() {
-        const slot = $("responsive-aside-slot");
-        const viewStack = document.querySelector(".view-stack");
-        if (!slot || !viewStack || slot.style.display === "none" || document.querySelector(".aside")?.parentElement !== slot) return;
-        window.setTimeout(() => {
-          const target = Math.max(0, slot.getBoundingClientRect().top - viewStack.getBoundingClientRect().top + viewStack.scrollTop - 12);
-          viewStack.scrollTop = target;
-        }, 80);
+        const drawer = $("detail-drawer");
+        if (!drawer) return;
+        drawer.classList.add("show");
+        drawer.setAttribute("aria-hidden", "false");
+      }
+
+      function hideDetailPanel() {
+        const drawer = $("detail-drawer");
+        if (!drawer) return;
+        drawer.classList.remove("show");
+        drawer.setAttribute("aria-hidden", "true");
       }
 
       function updateDashboardAuthState() {
@@ -2727,7 +2667,7 @@
       }
 
       function candidateScrollFrame(input) {
-        return input?.closest?.(".view-stack, .detail-panel, .nav") || document.documentElement;
+        return input?.closest?.(".view-stack, .nav") || document.documentElement;
       }
 
       function candidateAnchor(input) {
@@ -3867,12 +3807,9 @@
       }
 
       function clearDetail() {
-        $("detail-title").textContent = "辅助面板";
-        $("detail-body").innerHTML = `
-          <div class="faq-item open"><button class="faq-q">如何开始？<span>⌄</span></button><div class="faq-a">先载入图谱，或在查询页使用聚合查询。写入类操作由 AstrBot Dashboard 登录态保护。</div></div>
-          <div class="faq-item"><button class="faq-q">Episode 从哪里来？<span>⌄</span></button><div class="faq-a">新增或删除段落会将 source 放入重建队列；也可以在情景页手动重建。</div></div>
-          <div class="faq-item"><button class="faq-q">聚合查询包含什么？<span>⌄</span></button><div class="faq-a">聚合查询会融合语义、时间和 episode 分支，并输出混合排序结果。</div></div>
-        `;
+        hideDetailPanel();
+        $("detail-title").textContent = "详情面板";
+        $("detail-body").innerHTML = "";
       }
 
       async function refreshAll() {
@@ -4047,12 +3984,12 @@
         if (titles[hashView] && hashView !== state.view) setView(hashView);
       });
 
-      window.addEventListener("resize", relocateAside);
+      window.addEventListener("resize", handleViewportResize);
 
       document.addEventListener("DOMContentLoaded", async () => {
         upgradeCandidateInputs();
         bindEvents();
-        relocateAside();
+        handleViewportResize();
         updateDashboardAuthState();
         ensureGraph();
         const hashView = (location.hash || "").replace("#", "");
