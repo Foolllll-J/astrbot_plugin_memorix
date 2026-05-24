@@ -1977,7 +1977,16 @@
 
       function handleViewportResize() {
         if (state.graph.network) {
-          setTimeout(() => fitGraphView(false), 80);
+          const view = state.graph.network.getViewPosition?.();
+          const scale = actualGraphScale();
+          setTimeout(() => {
+            if (!state.graph.network) return;
+            state.graph.network.redraw();
+            if (view && Number.isFinite(scale)) {
+              state.graph.network.moveTo({ position: view, scale, animation: false });
+              updateGraphZoomControls(scale);
+            }
+          }, 80);
         }
       }
 
@@ -2822,6 +2831,8 @@
 
       function toggleGraphSimulation() {
         if (!ensureGraph()) return;
+        state.graph.userZoomed = true;
+        clearGraphAutoFit();
         state.graph.simulationRunning = !state.graph.simulationRunning;
         state.graph.network.setOptions({ physics: { enabled: state.graph.simulationRunning } });
         if (state.graph.simulationRunning) {
