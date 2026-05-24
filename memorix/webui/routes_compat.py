@@ -1,12 +1,14 @@
 
 import asyncio
 import json
+from datetime import datetime
 from fastapi import FastAPI, HTTPException, Body, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 
 from astrbot.api import logger
+from ..core.utils.hash import compute_hash
 from ..amemorix.settings import mask_sensitive
 
 class EdgeWeightUpdate(BaseModel):
@@ -133,6 +135,34 @@ class MemorixServer:
                     if nick:
                         out.append(nick)
             return out
+
+        def _relation_hash(subject: str, predicate: str, obj: str) -> str:
+            key = (
+                f"{str(subject or '').strip().lower()}|"
+                f"{str(predicate or '').strip().lower()}|"
+                f"{str(obj or '').strip().lower()}"
+            )
+            return compute_hash(key)
+
+        def _edge_relation_hashes(source: str, target: str) -> List[str]:
+            if not self.plugin.metadata_store:
+                return []
+            if self.plugin.graph_store and hasattr(self.plugin.graph_store, "get_relation_hashes_for_edge"):
+                hashes = self.plugin.graph_store.get_relation_hashes_for_edge(source, target)
+                if hashes:
+                    return list(hashes)
+            rels = self.plugin.metadata_store.get_relations(subject=source, object=target)
+            return [str(item.get("hash", "")) for item in rels if item.get("hash")]
+
+        def _save_available_stores() -> None:
+            for store_name in ("vector_store", "graph_store"):
+                store = getattr(self.plugin, store_name, None)
+                save = getattr(store, "save", None)
+                if callable(save):
+                    try:
+                        save()
+                    except Exception as exc:
+                        logger.warning("WebUI save failed for %s: %s", store_name, exc)
 
         
         @self.app.get("/api/graph")
@@ -591,19 +621,23 @@ class MemorixServer:
         @self.app.delete("/api/edge")
         async def delete_edge(data: EdgeDelete):
             """删除边"""
-            if self.plugin.graph_store is None:
+            if self.plugin.graph_store is None or self.plugin.metadata_store is None:
                 raise HTTPException(status_code=503, detail="Graph store not initialized")
             
             try:
-                # 将权重设为 0 或移除
-                # 简单做法：update_edge_weight 减去当前权重
-                current_weight = self.plugin.graph_store.get_edge_weight(data.source, data.target)
-                self.plugin.graph_store.update_edge_weight(data.source, data.target, -current_weight)
+                relation_hashes = _edge_relation_hashes(data.source, data.target)
+                deleted_relations = 0
+                if relation_hashes:
+                    deleted_relations = self.plugin.metadata_store.backup_and_delete_relations(relation_hashes)
+                    self.plugin.graph_store.delete_edges([(data.source, data.target)])
+                    if self.plugin.vector_store:
+                        self.plugin.vector_store.delete(relation_hashes)
+                else:
+                    self.plugin.graph_store.delete_edges([(data.source, data.target)])
                 
-                # 持久化保存
-                self.plugin.graph_store.save()
+                _save_available_stores()
                 self._relation_cache = None
-                return {"success": True}
+                return {"success": True, "deleted_relations": deleted_relations}
             except Exception as e:
                 logger.error(f"Delete edge failed: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
@@ -611,7 +645,6 @@ class MemorixServer:
         @self.app.post("/api/node")
         async def create_node(data: NodeCreate):
             """创建节点"""
-            print(f"DEBUG: graph_store={self.plugin.graph_store}")
             if self.plugin.graph_store is None:
                 raise HTTPException(status_code=503, detail="Graph store not initialized")
             
@@ -642,23 +675,26 @@ class MemorixServer:
                 
                 # 1. 如果有语义关系，先存入 MetadataStore
                 if data.predicate and self.plugin.metadata_store:
-                   self.plugin.metadata_store.add_relation(
+                   relation_hash = self.plugin.metadata_store.add_relation(
                        subject=data.source, 
                        predicate=data.predicate, 
                        obj=data.target,
                        confidence=data.weight
                    )
+                else:
+                   relation_hash = _relation_hash(data.source, data.predicate or "关联", data.target)
 
                 # 2. 使用 GraphStore.add_edges 方法建立物理连接
                 added_count = self.plugin.graph_store.add_edges(
                     [(data.source, data.target)],
-                    weights=[data.weight]
+                    weights=[data.weight],
+                    relation_hashes=[relation_hash],
                 )
                 
                 # 持久化保存
                 self.plugin.graph_store.save()
                 self._relation_cache = None
-                return {"success": True, "added_count": added_count, "predicate": data.predicate}
+                return {"success": True, "added_count": added_count, "predicate": data.predicate, "relation_hash": relation_hash}
             except Exception as e:
                 logger.error(f"Create edge failed: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
@@ -878,7 +914,8 @@ class MemorixServer:
         
         class MemoryProtectRequest(BaseModel):
             id: str # 边 ID "s_t"
-            type: str # "pin" (置顶) 或 "ttl" (时间限制)
+            type: str = "ttl" # "pin" (置顶) 或 "ttl" (时间限制)
+            hours: Optional[float] = None
             duration: Optional[float] = 0.0 # TTL 的小时数
             
         class MemoryActionRequest(BaseModel):
@@ -1023,7 +1060,8 @@ class MemorixServer:
                      if hashes:
                          h_list = list(hashes)
                          is_pinned = (data.type == "pin")
-                         ttl = data.duration * 3600 if data.type == "ttl" else 0
+                         duration_hours = data.duration if data.duration else (data.hours or 0.0)
+                         ttl = float(duration_hours or 0.0) * 3600 if data.type == "ttl" else 0
                          
                          self.plugin.metadata_store.protect_relations(h_list, is_pinned=is_pinned, ttl_seconds=ttl)
                 
@@ -1059,6 +1097,68 @@ class MemorixServer:
             except Exception as e:
                 logger.error(f"Person profile query failed: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/api/memory/edge/reinforce")
+        async def reinforce_edge_memory(data: MemoryActionRequest):
+            """按 WebUI 边 ID 强化关系；兼容只知道 source_target 的图谱详情按钮。"""
+            if not self.plugin.metadata_store:
+                raise HTTPException(status_code=503, detail="Metadata store missing")
+            if "_" not in data.id:
+                raise HTTPException(400, "Invalid ID format")
+            s, t = data.id.split("_", 1)
+            hashes = _edge_relation_hashes(s, t)
+            if not hashes:
+                return {"success": False, "message": "未找到关系", "count": 0}
+            self.plugin.metadata_store.reinforce_relations(hashes)
+            if self.plugin.graph_store:
+                self.plugin.graph_store.update_edge_weight(s, t, 1.0)
+                self.plugin.graph_store.save()
+            self._relation_cache = None
+            return {"success": True, "count": len(hashes)}
+
+        @self.app.post("/api/memory/edge/protect")
+        async def protect_edge_memory(data: MemoryProtectRequest):
+            """按 WebUI 边 ID 保护关系，接受旧 WebUI 的 hours 参数。"""
+            if not self.plugin.metadata_store:
+                raise HTTPException(status_code=503, detail="Metadata store missing")
+            if "_" not in data.id:
+                raise HTTPException(400, "Invalid ID format")
+            s, t = data.id.split("_", 1)
+            hashes = _edge_relation_hashes(s, t)
+            if not hashes:
+                return {"success": False, "message": "未找到关系", "count": 0}
+            duration = data.duration
+            if not duration and hasattr(data, "hours"):
+                duration = getattr(data, "hours", 0.0)
+            try:
+                hours = float(duration or 24.0)
+            except Exception:
+                hours = 24.0
+            until = datetime.now().timestamp() + max(0.0, hours) * 3600
+            self.plugin.metadata_store.update_relations_protection(
+                hashes,
+                protected_until=until,
+                is_pinned=False,
+            )
+            return {"success": True, "mode": "ttl", "count": len(hashes), "protected_until": until}
+
+        @self.app.post("/api/memory/edge/freeze")
+        async def freeze_edge_memory(data: MemoryActionRequest):
+            """按 WebUI 边 ID 冷冻关系。"""
+            if not self.plugin.metadata_store:
+                raise HTTPException(status_code=503, detail="Metadata store missing")
+            if "_" not in data.id:
+                raise HTTPException(400, "Invalid ID format")
+            s, t = data.id.split("_", 1)
+            hashes = _edge_relation_hashes(s, t)
+            if not hashes:
+                return {"success": False, "message": "未找到关系", "count": 0}
+            self.plugin.metadata_store.mark_relations_inactive(hashes)
+            if self.plugin.graph_store:
+                self.plugin.graph_store.deactivate_edges([(s, t)])
+                self.plugin.graph_store.save()
+            self._relation_cache = None
+            return {"success": True, "count": len(hashes), "frozen_edges": 1}
 
         @self.app.get("/api/person_profile/list")
         async def list_person_profile_candidates(

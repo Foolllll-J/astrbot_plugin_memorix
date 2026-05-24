@@ -1951,7 +1951,10 @@
             throw new Error("请从 AstrBot Dashboard 的插件页打开 Memorix 控制台");
           }
           if (typeof bridge.ready === "function") await bridge.ready();
-          return await bridge.apiPost("webui/request", { method, url, data });
+          const envelope = await bridge.apiPost("webui/request", { method, url, data });
+          if (envelope?.status === "error") throw new Error(envelope.message || "Memorix WebUI 请求失败");
+          if (envelope?.status === "ok" && Object.prototype.hasOwnProperty.call(envelope, "data")) return envelope.data;
+          return envelope;
         } catch (error) {
           const text = errText(error);
           log(`${url}: ${text}`, "error");
@@ -2886,12 +2889,14 @@
       }
 
       function normalizeGraphEdge(e) {
+        const rawValue = Number(e.value || 0);
         return {
           id: e.id || `${e.from}_${e.to}`,
           from: e.from,
           to: e.to,
           label: e.label || "",
-          value: Math.max(1, Number(e.value || 1)),
+          value: Math.max(1, rawValue || 1),
+          raw_value: rawValue,
           arrows: "to",
           dashes: !!e.dashes || e.is_active === false,
           color: e.color || (e.is_active === false ? { color: "#c4ced8" } : undefined),
@@ -3112,7 +3117,7 @@
               ${edge.is_protected ? '<span class="tag ok">保护中</span>' : ""}
             </div>
           </div>
-          <div class="field" style="margin-top:12px"><label>权重</label><input id="edge-weight-input" class="input" type="number" min="0" max="10" step="0.1" value="${Number(edge.value || 1)}" /></div>
+          <div class="field" style="margin-top:12px"><label>权重</label><input id="edge-weight-input" class="input" type="number" min="0" max="10" step="0.1" value="${Number(edge.raw_value ?? edge.value ?? 1)}" /></div>
           <div class="toolbar" style="margin-top:10px">
             <button class="btn primary" onclick="saveSelectedEdgeWeight()">保存权重</button>
             <button class="btn" onclick="reinforceSelectedEdge()">强化</button>
@@ -3180,19 +3185,21 @@
 
       async function reinforceSelectedEdge() {
         if (!state.selectedEdge?.id) return;
-        await request("post", "/api/memory/reinforce", { id: state.selectedEdge.id });
+        await request("post", "/api/memory/edge/reinforce", { id: state.selectedEdge.id });
         toast("关系已强化");
+        await loadGraph();
       }
 
       async function protectSelectedEdge() {
         if (!state.selectedEdge?.id) return;
-        await request("post", "/api/memory/protect", { id: state.selectedEdge.id, hours: 24 });
+        await request("post", "/api/memory/edge/protect", { id: state.selectedEdge.id, hours: 24 });
         toast("关系已保护");
+        await loadGraph();
       }
 
       async function freezeSelectedEdge() {
         if (!state.selectedEdge?.id) return;
-        await request("post", "/api/memory/freeze", { id: state.selectedEdge.id });
+        await request("post", "/api/memory/edge/freeze", { id: state.selectedEdge.id });
         toast("关系已冷冻");
         await loadGraph();
       }

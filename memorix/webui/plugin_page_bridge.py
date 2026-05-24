@@ -30,10 +30,12 @@ PLUGIN_PAGE_API_ROUTE = "webui/request"
 class _WebV1TaskManager:
     """Minimal v1 task manager for the Dashboard embedded WebUI."""
 
-    def __init__(self, ctx: Any):
+    def __init__(self, ctx: Any, *, import_task_manager: ImportTaskManager | None = None):
         self.ctx = ctx
         self.import_service = ImportService(ctx)
         self.summary_service = SummaryService(ctx)
+        self.import_task_manager = import_task_manager or ImportTaskManager(ctx)
+        self._native_import_task_ids: Set[str] = set()
         self._jobs: Set[asyncio.Task] = set()
 
     async def start(self) -> None:
@@ -48,9 +50,64 @@ class _WebV1TaskManager:
             await asyncio.gather(*jobs, return_exceptions=True)
 
     def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
-        return self.ctx.metadata_store.get_async_task(task_id)
+        task = self.ctx.metadata_store.get_async_task(task_id)
+        if task:
+            return task
+
+        # ImportTaskManager exposes an async get_task(), while the v1 router calls
+        # this compatibility manager synchronously. Keep a narrow read-only bridge
+        # for native import tasks created through enqueue_import_task().
+        task_key = str(task_id or "")
+        if task_key not in self._native_import_task_ids:
+            return None
+        native_tasks = getattr(self.import_task_manager, "_tasks", {})
+        native_task = native_tasks.get(task_key) if isinstance(native_tasks, dict) else None
+        if native_task is None:
+            return None
+        to_detail = getattr(native_task, "to_detail", None)
+        if callable(to_detail):
+            return to_detail(include_chunks=True)
+        return native_task if isinstance(native_task, dict) else None
+
+    async def _compat_import_task(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        mode = str(payload.get("mode", "text") or "text").strip().lower()
+        body = payload.get("payload")
+        options = payload.get("options") if isinstance(payload.get("options"), dict) else {}
+        try:
+            if mode == "text":
+                content = body if isinstance(body, str) else str(body or "")
+                if not content.strip():
+                    raise ValueError("content 不能为空")
+                return await self.import_task_manager.create_paste_task(
+                    {
+                        "content": content,
+                        "name": str(options.get("name") or options.get("source") or "webui_text.txt"),
+                        "knowledge_type": str(options.get("knowledge_type", "")),
+                    }
+                )
+            if mode == "file" and isinstance(body, str):
+                return await self.import_task_manager.create_raw_scan_task(
+                    {
+                        "alias": "raw",
+                        "relative_path": body,
+                        "glob": "*",
+                        "recursive": True,
+                        "knowledge_type": str(options.get("knowledge_type", "")),
+                    }
+                )
+        except Exception:
+            if self.import_task_manager.is_enabled():
+                raise
+        return None
 
     async def enqueue_import_task(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        compat_task = await self._compat_import_task(payload)
+        if compat_task is not None:
+            task_id = str(compat_task.get("task_id") or "")
+            if task_id:
+                self._native_import_task_ids.add(task_id)
+            return compat_task
+
         task_id = uuid.uuid4().hex
         task = self.ctx.metadata_store.create_async_task(task_id=task_id, task_type="import", payload=payload)
         job = asyncio.create_task(self._run_import(task_id, payload), name=f"webui-import-{task_id[:8]}")
@@ -319,13 +376,13 @@ class PluginPageWebUIBridge:
             app.add_middleware(ImportWriteGuardMiddleware)
             app.state._memorix_import_guard_registered = True
 
-        task_manager = _WebV1TaskManager(runtime.context)
-        await task_manager.start()
-        app.state.task_manager = task_manager
-
         import_task_manager = ImportTaskManager(runtime.context)
         await import_task_manager.start()
         app.state.import_task_manager = import_task_manager
+
+        task_manager = _WebV1TaskManager(runtime.context, import_task_manager=import_task_manager)
+        await task_manager.start()
+        app.state.task_manager = task_manager
 
         transport = httpx.ASGITransport(app=app)
         client = httpx.AsyncClient(transport=transport, base_url="http://memorix.local")

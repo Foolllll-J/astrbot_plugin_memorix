@@ -146,3 +146,66 @@ def test_connect_patches_legacy_transcript_position_column(tmp_path):
         assert store.get_transcript_messages("s1")[0]["position"] == 0
     finally:
         store.close()
+
+
+def test_existing_version_db_still_gets_episode_position_patch(tmp_path):
+    db_path = tmp_path / "metadata.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        f"""
+        CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at REAL NOT NULL);
+        INSERT INTO schema_migrations(version, applied_at) VALUES ({SCHEMA_VERSION}, 1.0);
+        CREATE TABLE paragraphs (
+            hash TEXT PRIMARY KEY,
+            content TEXT NOT NULL,
+            vector_index INTEGER,
+            created_at REAL,
+            updated_at REAL,
+            metadata TEXT,
+            source TEXT,
+            word_count INTEGER,
+            event_time REAL,
+            event_time_start REAL,
+            event_time_end REAL,
+            time_granularity TEXT,
+            time_confidence REAL DEFAULT 1.0,
+            knowledge_type TEXT DEFAULT 'mixed',
+            is_permanent BOOLEAN DEFAULT 0,
+            last_accessed REAL,
+            access_count INTEGER DEFAULT 0,
+            is_deleted INTEGER DEFAULT 0,
+            deleted_at REAL
+        );
+        CREATE TABLE episodes (
+            episode_id TEXT PRIMARY KEY,
+            source TEXT,
+            title TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            paragraph_count INTEGER DEFAULT 0,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        );
+        CREATE TABLE episode_paragraphs (
+            episode_id TEXT NOT NULL,
+            paragraph_hash TEXT NOT NULL,
+            PRIMARY KEY (episode_id, paragraph_hash)
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    store = MetadataStore(tmp_path)
+    store.connect()
+    try:
+        columns = {row[1] for row in store._conn.execute("PRAGMA table_info(episode_paragraphs)").fetchall()}
+        assert "position" in columns
+    finally:
+        store.close()
+
+    reopened = sqlite3.connect(db_path)
+    try:
+        columns = {row[1] for row in reopened.execute("PRAGMA table_info(episode_paragraphs)").fetchall()}
+        assert "position" in columns
+    finally:
+        reopened.close()
