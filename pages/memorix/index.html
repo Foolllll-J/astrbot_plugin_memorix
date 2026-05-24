@@ -2582,6 +2582,17 @@
         setDatalist("source-suggestions", state.candidateSources);
       }
 
+      function sourceNameOf(item) {
+        if (typeof item === "string") return item;
+        return item?.source || "";
+      }
+
+      function normalizeSourceItem(item) {
+        if (typeof item === "string") return { source: item };
+        if (item && typeof item === "object") return item;
+        return { source: "" };
+      }
+
       function updateTaskSuggestions(values) {
         if (values) {
           state.candidateTasks = uniqueValues([...values, ...state.candidateTasks]);
@@ -3285,18 +3296,24 @@
         $("detail-body").innerHTML = '<div class="empty">正在加载来源批次</div>';
         revealDetailPanel();
         const data = await request("post", "/api/source/list", {});
-        const sources = data.sources || [];
+        const sources = (data.sources || []).map(normalizeSourceItem).filter((item) => sourceNameOf(item));
         $("detail-body").innerHTML = sources.length ? `
           <div class="result-list">
-            ${sources.map((source) => `
+            ${sources.map((item) => {
+              const source = sourceNameOf(item);
+              return `
               <div class="result compact">
                 <div class="result-head"><h3>${escapeHtml(source)}</h3></div>
+                <div class="tags">
+                  ${item.count != null ? `<span class="tag">${Number(item.count || 0)} paragraphs</span>` : ""}
+                  ${item.last_updated ? `<span class="tag">${formatTs(item.last_updated)}</span>` : ""}
+                </div>
                 <div class="result-actions">
                   <button class="btn primary" data-source-focus="${dataValue(source)}">聚焦子图</button>
                   <button class="btn danger" data-source-delete="${dataValue(source)}">删除 source</button>
                 </div>
               </div>
-            `).join("")}
+            `;}).join("")}
           </div>
         ` : '<div class="empty">暂无来源批次</div>';
       }
@@ -3593,7 +3610,7 @@
       function renderSources(items) {
         if (!items?.length) return '<div class="empty">没有来源段落</div>';
         return items.map((item) => {
-          const source = typeof item === "string" ? item : item.source;
+          const source = sourceNameOf(item);
           return `<div class="result">
               <div class="result-head">
                 <h3>${escapeHtml(source || item.hash || "source")}</h3>
@@ -3616,12 +3633,12 @@
         };
         const data = await request("post", "/api/source/list", payload);
         if (data.mode === "summary") {
-          const sources = (data.sources || []).map((src) => ({ source: src }));
-          updateSourceSuggestions(sources.map((item) => item.source));
+          const sources = (data.sources || []).map(normalizeSourceItem).filter((item) => sourceNameOf(item));
+          updateSourceSuggestions(sources.map(sourceNameOf));
           $("source-meta").textContent = `${sources.length} sources`;
           $("source-results").innerHTML = renderSources(sources);
         } else {
-          updateSourceSuggestions((data.sources || []).map((item) => item.source));
+          updateSourceSuggestions((data.sources || []).map(sourceNameOf));
           $("source-meta").textContent = `${(data.sources || []).length} paragraphs`;
           $("source-results").innerHTML = renderSources(data.sources || []);
         }

@@ -120,6 +120,7 @@ class MetadataStore:
             logger.warning(f"初始化 FTS schema 失败，将跳过 BM25 检索: {e}")
         self._ensure_async_task_schema()
         self._ensure_transcript_schema()
+        self._ensure_episode_schema()
         self._ensure_person_registry_schema()
         self._ensure_person_profile_schema()
 
@@ -489,6 +490,28 @@ class MetadataStore:
         """)
         self._conn.commit()
 
+    def _table_columns(self, cursor: sqlite3.Cursor, table_name: str) -> set[str]:
+        """Return existing columns for a known SQLite table."""
+        cursor.execute(f"PRAGMA table_info({table_name})")
+        return {str(row[1]) for row in cursor.fetchall()}
+
+    def _ensure_table_column(
+        self,
+        cursor: sqlite3.Cursor,
+        *,
+        table_name: str,
+        column_name: str,
+        add_column_sql: str,
+    ) -> None:
+        """Add a missing column for legacy DBs where CREATE TABLE IF NOT EXISTS is not enough."""
+        if column_name in self._table_columns(cursor, table_name):
+            return
+        try:
+            cursor.execute(add_column_sql)
+            logger.info("Schema兼容迁移完成：已添加 %s.%s", table_name, column_name)
+        except sqlite3.OperationalError as e:
+            logger.warning("Schema兼容迁移失败（%s.%s）: %s", table_name, column_name, e)
+
     def _create_transcript_schema(self, cursor: sqlite3.Cursor) -> None:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS transcript_sessions (
@@ -511,6 +534,12 @@ class MetadataStore:
                 FOREIGN KEY (session_id) REFERENCES transcript_sessions(session_id) ON DELETE CASCADE
             )
         """)
+        self._ensure_table_column(
+            cursor,
+            table_name="transcript_messages",
+            column_name="position",
+            add_column_sql="ALTER TABLE transcript_messages ADD COLUMN position INTEGER NOT NULL DEFAULT 0",
+        )
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_transcript_messages_session_pos
             ON transcript_messages(session_id, position)
@@ -525,6 +554,155 @@ class MetadataStore:
             return
         cursor = self._conn.cursor()
         self._create_transcript_schema(cursor)
+        self._conn.commit()
+
+    def _ensure_episode_schema(self) -> None:
+        """Create Episode tables and patch legacy schemas used by v1/WebUI queries."""
+        if not self._conn:
+            return
+        cursor = self._conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS episodes (
+                episode_id TEXT PRIMARY KEY,
+                source TEXT,
+                title TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                event_time_start REAL,
+                event_time_end REAL,
+                time_granularity TEXT,
+                time_confidence REAL DEFAULT 1.0,
+                participants_json TEXT,
+                keywords_json TEXT,
+                evidence_ids_json TEXT,
+                paragraph_count INTEGER DEFAULT 0,
+                llm_confidence REAL DEFAULT 0.0,
+                segmentation_model TEXT,
+                segmentation_version TEXT,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+        """)
+        episode_columns = {
+            "source": "ALTER TABLE episodes ADD COLUMN source TEXT",
+            "title": "ALTER TABLE episodes ADD COLUMN title TEXT DEFAULT ''",
+            "summary": "ALTER TABLE episodes ADD COLUMN summary TEXT DEFAULT ''",
+            "event_time_start": "ALTER TABLE episodes ADD COLUMN event_time_start REAL",
+            "event_time_end": "ALTER TABLE episodes ADD COLUMN event_time_end REAL",
+            "time_granularity": "ALTER TABLE episodes ADD COLUMN time_granularity TEXT",
+            "time_confidence": "ALTER TABLE episodes ADD COLUMN time_confidence REAL DEFAULT 1.0",
+            "participants_json": "ALTER TABLE episodes ADD COLUMN participants_json TEXT",
+            "keywords_json": "ALTER TABLE episodes ADD COLUMN keywords_json TEXT",
+            "evidence_ids_json": "ALTER TABLE episodes ADD COLUMN evidence_ids_json TEXT",
+            "paragraph_count": "ALTER TABLE episodes ADD COLUMN paragraph_count INTEGER DEFAULT 0",
+            "llm_confidence": "ALTER TABLE episodes ADD COLUMN llm_confidence REAL DEFAULT 0.0",
+            "segmentation_model": "ALTER TABLE episodes ADD COLUMN segmentation_model TEXT",
+            "segmentation_version": "ALTER TABLE episodes ADD COLUMN segmentation_version TEXT",
+            "created_at": "ALTER TABLE episodes ADD COLUMN created_at REAL",
+            "updated_at": "ALTER TABLE episodes ADD COLUMN updated_at REAL",
+        }
+        for column_name, add_column_sql in episode_columns.items():
+            self._ensure_table_column(
+                cursor,
+                table_name="episodes",
+                column_name=column_name,
+                add_column_sql=add_column_sql,
+            )
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS episode_paragraphs (
+                episode_id TEXT NOT NULL,
+                paragraph_hash TEXT NOT NULL,
+                position INTEGER DEFAULT 0,
+                PRIMARY KEY (episode_id, paragraph_hash),
+                FOREIGN KEY (episode_id) REFERENCES episodes(episode_id) ON DELETE CASCADE,
+                FOREIGN KEY (paragraph_hash) REFERENCES paragraphs(hash) ON DELETE CASCADE
+            )
+        """)
+        self._ensure_table_column(
+            cursor,
+            table_name="episode_paragraphs",
+            column_name="position",
+            add_column_sql="ALTER TABLE episode_paragraphs ADD COLUMN position INTEGER DEFAULT 0",
+        )
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS episode_pending_paragraphs (
+                paragraph_hash TEXT PRIMARY KEY,
+                source TEXT,
+                created_at REAL,
+                status TEXT DEFAULT 'pending',
+                retry_count INTEGER DEFAULT 0,
+                last_error TEXT,
+                updated_at REAL NOT NULL
+            )
+        """)
+        episode_pending_columns = {
+            "source": "ALTER TABLE episode_pending_paragraphs ADD COLUMN source TEXT",
+            "created_at": "ALTER TABLE episode_pending_paragraphs ADD COLUMN created_at REAL",
+            "status": "ALTER TABLE episode_pending_paragraphs ADD COLUMN status TEXT DEFAULT 'pending'",
+            "retry_count": "ALTER TABLE episode_pending_paragraphs ADD COLUMN retry_count INTEGER DEFAULT 0",
+            "last_error": "ALTER TABLE episode_pending_paragraphs ADD COLUMN last_error TEXT",
+            "updated_at": "ALTER TABLE episode_pending_paragraphs ADD COLUMN updated_at REAL",
+        }
+        for column_name, add_column_sql in episode_pending_columns.items():
+            self._ensure_table_column(
+                cursor,
+                table_name="episode_pending_paragraphs",
+                column_name=column_name,
+                add_column_sql=add_column_sql,
+            )
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS episode_rebuild_sources (
+                source TEXT PRIMARY KEY,
+                status TEXT DEFAULT 'pending',
+                retry_count INTEGER DEFAULT 0,
+                last_error TEXT,
+                reason TEXT,
+                requested_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+        """)
+        episode_rebuild_columns = {
+            "status": "ALTER TABLE episode_rebuild_sources ADD COLUMN status TEXT DEFAULT 'pending'",
+            "retry_count": "ALTER TABLE episode_rebuild_sources ADD COLUMN retry_count INTEGER DEFAULT 0",
+            "last_error": "ALTER TABLE episode_rebuild_sources ADD COLUMN last_error TEXT",
+            "reason": "ALTER TABLE episode_rebuild_sources ADD COLUMN reason TEXT",
+            "requested_at": "ALTER TABLE episode_rebuild_sources ADD COLUMN requested_at REAL",
+            "updated_at": "ALTER TABLE episode_rebuild_sources ADD COLUMN updated_at REAL",
+        }
+        for column_name, add_column_sql in episode_rebuild_columns.items():
+            self._ensure_table_column(
+                cursor,
+                table_name="episode_rebuild_sources",
+                column_name=column_name,
+                add_column_sql=add_column_sql,
+            )
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_episodes_source_time_end
+            ON episodes(source, event_time_end DESC)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_episodes_updated_at
+            ON episodes(updated_at DESC)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_episode_paragraphs_paragraph
+            ON episode_paragraphs(paragraph_hash)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_episode_pending_status_updated
+            ON episode_pending_paragraphs(status, updated_at)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_episode_pending_source_created
+            ON episode_pending_paragraphs(source, created_at)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_episode_rebuild_status_updated
+            ON episode_rebuild_sources(status, updated_at)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_episode_rebuild_updated_at
+            ON episode_rebuild_sources(updated_at DESC)
+        """)
         self._conn.commit()
 
     def _create_person_registry_schema(self, cursor: sqlite3.Cursor) -> None:
