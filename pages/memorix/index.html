@@ -262,7 +262,19 @@
         min-height: 0;
         overflow: auto;
         overscroll-behavior: contain;
-        padding-right: 10px;
+        padding-right: 6px;
+      }
+
+      .view-stack.no-scroll {
+        overflow: hidden;
+        padding-right: 0;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .view-stack.no-scroll > .view.active {
+        flex: 1 1 auto;
+        min-height: 0;
       }
 
       .nav,
@@ -867,13 +879,23 @@
 
       .graph-wrap {
         display: grid;
-        grid-template-rows: auto minmax(520px, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
         gap: 12px;
-        min-height: min(780px, calc(100vh - 220px));
+        height: 100%;
+        min-height: 0;
+      }
+
+      #view-graph.view.active {
+        height: 100%;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
       }
 
       #graph-canvas {
-        height: clamp(520px, calc(100vh - 300px), 760px);
+        min-height: 320px;
+        height: 100%;
+        width: 100%;
         border: 1px solid var(--border);
         border-radius: 16px;
         background:
@@ -1968,8 +1990,13 @@
         $("page-title").textContent = title;
         $("page-subtitle").textContent = subtitle;
         location.hash = view;
+        const viewStack = document.querySelector(".view-stack");
+        if (viewStack) viewStack.classList.toggle("no-scroll", view === "graph");
         if (view === "graph" && state.graph.network) {
-          setTimeout(() => state.graph.network.fit({ animation: true }), 80);
+          window.requestAnimationFrame(() => {
+            state.graph.network.redraw();
+            setTimeout(() => fitGraphView(true), 80);
+          });
         }
         if (view === "memory") {
           Promise.allSettled([loadMemoryStatus(), loadRecycle()]);
@@ -2395,7 +2422,7 @@
           { nodes: state.graph.nodes, edges: state.graph.edges },
           {
             autoResize: true,
-            interaction: { hover: true, tooltipDelay: 120, multiselect: false, zoomView: false },
+            interaction: { hover: true, tooltipDelay: 120, multiselect: false, zoomView: true, zoomSpeed: 0.6 },
             physics: {
               enabled: true,
               solver: "forceAtlas2Based",
@@ -2416,13 +2443,6 @@
             },
           },
         );
-        $("graph-canvas").addEventListener("wheel", (event) => {
-          const viewStack = document.querySelector(".view-stack");
-          if (!viewStack) return;
-          viewStack.scrollTop += event.deltaY;
-          viewStack.scrollLeft += event.deltaX;
-          event.preventDefault();
-        }, { passive: false, capture: true });
         state.graph.network.on("click", (params) => {
           if (params.nodes?.length) showNodeDetail(params.nodes[0]);
           else if (params.edges?.length) showEdgeDetail(params.edges[0]);
