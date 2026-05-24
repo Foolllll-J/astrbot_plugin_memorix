@@ -226,25 +226,35 @@
       }
 
       .topbar {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 16px;
-        align-items: start;
-        min-height: 58px;
+        display: flex;
+        gap: 14px;
+        align-items: baseline;
+        flex-wrap: wrap;
+        min-height: 44px;
+      }
+
+      .view-title {
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        flex-wrap: wrap;
+        flex: 1 1 auto;
+        min-width: 0;
       }
 
       .view-title h1 {
         margin: 0;
-        font-size: clamp(28px, 2.25vw, 42px);
-        line-height: 1;
+        font-size: clamp(22px, 1.9vw, 32px);
+        line-height: 1.1;
         letter-spacing: -0.02em;
         font-weight: 650;
       }
 
       .view-title p {
-        margin: 10px 0 0;
+        margin: 0;
         color: var(--muted);
         font-size: 13px;
+        line-height: 1.4;
       }
 
       .top-actions {
@@ -1284,11 +1294,6 @@
         }
 
         .topbar {
-          grid-template-columns: 1fr;
-        }
-
-        .top-actions {
-          justify-content: flex-start;
           flex-wrap: wrap;
         }
 
@@ -1387,12 +1392,8 @@
         }
 
         .topbar {
-          grid-template-columns: 1fr;
-        }
-
-        .top-actions {
-          justify-content: stretch;
-          flex-wrap: wrap;
+          flex-direction: column;
+          align-items: flex-start;
         }
 
         .token-box {
@@ -1451,10 +1452,6 @@
             <div class="view-title">
               <h1 id="page-title">Dashboard</h1>
               <p id="page-subtitle">运行状态、图谱体量与核心维护入口</p>
-            </div>
-            <div class="top-actions">
-              <span class="tag ok">AstrBot Dashboard 已鉴权</span>
-              <button class="btn primary" id="refresh-all">刷新</button>
             </div>
           </header>
 
@@ -3948,7 +3945,6 @@
             hideCandidateMenu();
           }
         });
-        $("refresh-all").onclick = refreshAll;
         $("runtime-refresh").onclick = () => loadRuntime(true);
         $("self-check-force").onclick = () => loadRuntime(true);
         $("detail-clear").onclick = clearDetail;
