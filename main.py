@@ -16,6 +16,7 @@ from .memorix.scope_router import ScopeRouter
 from .memorix.services import IngestService, MemoryService, ProfileService, QueryService, SummaryService
 from .memorix.tasks.maintenance_scheduler import MaintenanceScheduler
 from .memorix.webui import EmbeddedWebUIServer
+from .memorix.webui.plugin_page_bridge import PluginPageWebUIBridge
 
 
 @register("astrbot_plugin_memorix", "Codex", "A_memorix memory plugin with embedded WebUI", "0.4.0")
@@ -38,9 +39,15 @@ class MemorixPlugin(Star):
         self.summary_service = SummaryService(self.runtime_manager)
         self.maintenance_scheduler = MaintenanceScheduler(runtime_manager=self.runtime_manager)
         self.webui_server = EmbeddedWebUIServer(self.runtime_manager, self.config)
+        self.webui_page_bridge = PluginPageWebUIBridge(
+            runtime_manager=self.runtime_manager,
+            plugin_config=self.config,
+            scope_resolver=self._resolve_dashboard_webui_scope,
+        )
 
     async def initialize(self):
         logger.info("[memorix] initialize start")
+        self.webui_page_bridge.register(self.context, plugin_name="astrbot_plugin_memorix")
         if bool(self.config.get("webui", {}).get("enabled", True)):
             try:
                 ui_scope = self._resolve_webui_scope()
@@ -60,6 +67,7 @@ class MemorixPlugin(Star):
             self.webui_server.stop()
         except Exception:
             pass
+        await self.webui_page_bridge.close()
         await self.runtime_manager.close_all()
         logger.info("[memorix] terminate done")
 
@@ -77,6 +85,18 @@ class MemorixPlugin(Star):
         if known_scopes:
             return str(known_scopes[-1])
         return ""
+
+    def _resolve_dashboard_webui_scope(self) -> str:
+        configured = str(self.config.get("webui", {}).get("scope", "auto") or "auto").strip()
+        mode = configured.lower()
+        if mode not in {"", "auto", "current", "event"}:
+            return configured
+        if self.webui_server.state.scope_key:
+            return self.webui_server.state.scope_key
+        known_scopes = self.runtime_manager.get_known_scopes()
+        if known_scopes:
+            return str(known_scopes[-1])
+        return "default"
 
     async def _ensure_webui_scope_ready(self, scope_key: str) -> None:
         if not bool(self.config.get("webui", {}).get("enabled", True)):

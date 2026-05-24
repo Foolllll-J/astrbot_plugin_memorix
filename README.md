@@ -267,6 +267,13 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 
 ### WebUI
 
+插件同时提供两种入口：
+
+- **AstrBot Dashboard 内嵌页**：AstrBot `>=4.24.2` 可在插件详情页的 `Memorix 控制台` 页面中直接打开，接口经 AstrBot Dashboard 鉴权后转发到当前 Memorix runtime。
+- **独立 WebUI 服务**：继续保留 `/mem ui`，用于从聊天会话快速打开指定 scope 的独立管理页面。
+
+内嵌页的 scope 选择与独立 WebUI 保持一致：固定 `webui.scope` 时使用固定值；`auto/current/event` 时优先复用独立 WebUI 当前 scope，其次使用最近活跃 scope，首次打开且无活跃会话时回退到 `default`。
+
 | 配置项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
 | `webui.enabled` | bool | `true` | 启用 WebUI |
@@ -298,6 +305,7 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 ## 前端目录说明
 
 - WebUI 运行时实际读取：`memorix/webui/web/*`
+- AstrBot Dashboard 插件内嵌页读取：`pages/memorix/*`
 
 ## 依赖
 
@@ -307,6 +315,7 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | `scipy` | 图谱稀疏矩阵 |
 | `faiss-cpu` | 高性能向量索引（失败自动降级 Numpy） |
 | `fastapi` + `uvicorn` | 内嵌 WebUI 服务 |
+| `httpx` | AstrBot Dashboard 内嵌页到 FastAPI WebUI 的进程内请求转发 |
 | `pydantic` | 数据校验 |
 | `jieba` | 中文分词（BM25 检索） |
 | `openai` | OpenAI-compatible Embedding 客户端 |

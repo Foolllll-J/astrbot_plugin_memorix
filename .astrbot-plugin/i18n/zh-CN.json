@@ -1,0 +1,8 @@
+{
+  "pages": {
+    "memorix": {
+      "title": "Memorix 控制台",
+      "description": "在 AstrBot Dashboard 内查看和管理 A_Memorix 长期记忆。"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "pages": {
+    "memorix": {
+      "title": "Memorix Console",
+      "description": "View and manage A_Memorix long-term memory inside the AstrBot Dashboard."
+    }
+  }
+}
