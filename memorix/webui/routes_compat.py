@@ -43,6 +43,10 @@ class NodeRename(BaseModel):
 class AutoSaveConfig(BaseModel):
     enabled: bool
 
+class RuntimeConfigPatch(BaseModel):
+    updates: Dict[str, Any] = {}
+    persist: bool = False
+
 class SourceListRequest(BaseModel):
     node_id: Optional[str] = None
     edge_source: Optional[str] = None
@@ -95,6 +99,10 @@ class MemorixServer:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+        assets_dir = Path(__file__).parent / "web" / "assets"
+        if assets_dir.exists():
+            self.app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
         
         self._setup_routes()
 
@@ -1247,6 +1255,52 @@ class MemorixServer:
             if isinstance(plugin_config, dict):
                 base_payload["config"] = mask_sensitive(plugin_config)
             return base_payload
+
+        @self.app.patch("/api/config/runtime")
+        async def patch_runtime_config(data: RuntimeConfigPatch):
+            """更新运行时配置，适配新版 basic WebUI 的配置面板。"""
+
+            def _set_nested(target: Dict[str, Any], dotted_key: str, value: Any) -> None:
+                parts = [part for part in str(dotted_key or "").split(".") if part]
+                if not parts:
+                    return
+                current = target
+                for part in parts[:-1]:
+                    next_value = current.get(part)
+                    if not isinstance(next_value, dict):
+                        next_value = {}
+                        current[part] = next_value
+                    current = next_value
+                current[parts[-1]] = value
+
+            plugin_config = getattr(self.plugin, "config", None)
+            if not isinstance(plugin_config, dict):
+                raise HTTPException(status_code=500, detail="runtime config is not available")
+
+            for key, value in (data.updates or {}).items():
+                _set_nested(plugin_config, str(key), value)
+
+            settings = getattr(self.plugin, "settings", None)
+            settings_config = getattr(settings, "config", None)
+            if isinstance(settings_config, dict) and settings_config is not plugin_config:
+                for key, value in (data.updates or {}).items():
+                    _set_nested(settings_config, str(key), value)
+
+            self.plugin.config = plugin_config
+            if "advanced.enable_auto_save" in (data.updates or {}):
+                self.plugin._runtime_auto_save = bool(data.updates["advanced.enable_auto_save"])
+
+            # WebUI 运行在线程内，只能安全更新当前 runtime；AstrBot 插件配置落盘由插件主线程管理。
+            persisted = False
+            persist_message = "当前 WebUI 仅支持运行时配置更新；请在 AstrBot 插件配置页持久化配置。"
+            return {
+                "success": True,
+                "persisted": persisted,
+                "persist_message": persist_message,
+                "auto_save_enabled": self.plugin.get_config("advanced.enable_auto_save", True),
+                "auto_save_interval": self.plugin.get_config("advanced.auto_save_interval_minutes", 5),
+                "config": mask_sensitive(plugin_config),
+            }
 
         @self.app.post("/api/config/auto_save")
         async def set_auto_save(data: AutoSaveConfig):
