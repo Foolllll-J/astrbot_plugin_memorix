@@ -1410,7 +1410,7 @@
     <div class="app">
       <div class="app-title">
         <strong>A_MEMORIX CONTROL PANEL</strong>
-        <span>Standalone memory dashboard</span>
+        <span>AstrBot embedded dashboard</span>
       </div>
       <div class="shell">
         <aside class="sidebar">
@@ -1438,8 +1438,7 @@
               <p id="page-subtitle">运行状态、图谱体量与核心维护入口</p>
             </div>
             <div class="top-actions">
-              <input id="auth-token" class="input token-box" type="password" placeholder="访问令牌（可选）" autocomplete="off" />
-              <button class="btn" id="save-token">保存令牌</button>
+              <span class="tag ok">AstrBot Dashboard 已鉴权</span>
               <button class="btn primary" id="refresh-all">刷新</button>
             </div>
           </header>
@@ -1755,15 +1754,14 @@
               <div class="band">
                 <div class="panel-title"><h2>保存与安全</h2></div>
                 <div class="summary-grid token-status-grid">
-                  <div class="summary-item"><span>当前浏览器</span><strong id="local-token-status">Token 未保存</strong></div>
-                  <div class="summary-item"><span>服务端写入令牌</span><strong id="server-token-status">Token 未配置</strong></div>
+                  <div class="summary-item"><span>当前入口</span><strong id="local-token-status">Dashboard 已鉴权</strong></div>
+                  <div class="summary-item"><span>接口保护</span><strong id="server-token-status">AstrBot Dashboard</strong></div>
                   <div class="summary-item"><span>配置文件写回</span><strong id="config-persist-status">等待配置状态</strong></div>
                 </div>
                 <div class="toolbar">
                   <button class="btn primary" id="manual-save">手动保存</button>
                   <button class="btn" id="auto-save-on">开启自动保存</button>
                   <button class="btn" id="auto-save-off">关闭自动保存</button>
-                  <button class="btn danger" id="clear-token">清除 Token</button>
                 </div>
               </div>
             </section>
@@ -1782,8 +1780,8 @@
               <div class="runtime-grid">
                 <span class="tag">API /api</span>
                 <span class="tag">API /v1</span>
-                <span class="tag warn" id="token-chip">本机 token 未保存</span>
-                <span class="tag warn" id="server-token-chip">服务端 token 未配置</span>
+                <span class="tag ok" id="token-chip">Dashboard 已鉴权</span>
+                <span class="tag ok" id="server-token-chip">Dashboard 已鉴权</span>
                 <span class="tag" id="autosave-chip">auto-save -</span>
               </div>
             </div>
@@ -1797,7 +1795,7 @@
             <div id="detail-body" class="side-body">
               <div class="faq-item open">
                 <button class="faq-q">如何开始？<span>⌄</span></button>
-                <div class="faq-a">先载入图谱，或在查询页使用聚合查询。写入类操作需要配置 Bearer Token。</div>
+                <div class="faq-a">先载入图谱，或在查询页使用聚合查询。写入类操作由 AstrBot Dashboard 登录态保护。</div>
               </div>
               <div class="faq-item">
                 <button class="faq-q">Episode 从哪里来？<span>⌄</span></button>
@@ -1822,25 +1820,9 @@
 
     <script src="/api/plugin/page/bridge-sdk.js"></script>
     <script>
-      const storage = (() => {
-        try {
-          const key = "memorix_storage_probe";
-          localStorage.setItem(key, "1");
-          localStorage.removeItem(key);
-          return localStorage;
-        } catch {
-          return {
-            getItem: () => "",
-            setItem: () => {},
-            removeItem: () => {},
-          };
-        }
-      })();
-
       const state = {
         view: "dashboard",
         queryMode: "aggregate",
-        token: storage.getItem("memorix_auth_token") || "",
         graph: {
           network: null,
           nodes: null,
@@ -1876,7 +1858,6 @@
         },
         selectedNode: "",
         selectedEdge: null,
-        serverTokenConfigured: false,
         configPersistEnabled: false,
         configPersistPath: "",
         configPersistReason: "",
@@ -1954,10 +1935,7 @@
       function errText(error) {
         const raw = error?.detail?.detail || error?.detail?.message || error?.message || String(error);
         const known = {
-          "Authentication tokens are not configured.": "写入 Token 尚未配置，当前无法保存修改",
-          "Missing bearer token": "请先填写并保存 Bearer Token",
-          "Invalid bearer token": "Bearer Token 无效，请检查后重试",
-          "Unauthorized": "未通过鉴权，请检查 Bearer Token",
+          "Unauthorized": "AstrBot Dashboard 鉴权失败，请重新登录 Dashboard",
         };
         return known[raw] || raw;
       }
@@ -1969,39 +1947,11 @@
       async function request(method, url, data) {
         try {
           const bridge = window.AstrBotPluginPage;
-          if (bridge && typeof bridge.apiPost === "function") {
-            if (typeof bridge.ready === "function") await bridge.ready();
-            return await bridge.apiPost("webui/request", { method, url, data });
+          if (!bridge || typeof bridge.apiPost !== "function") {
+            throw new Error("请从 AstrBot Dashboard 的插件页打开 Memorix 控制台");
           }
-
-          const options = {
-            method: method.toUpperCase(),
-            headers: { Accept: "application/json" },
-          };
-          const token = state.token || "";
-          if (token) options.headers.Authorization = `Bearer ${token}`;
-          if (data !== undefined && options.method !== "GET") {
-            options.headers["Content-Type"] = "application/json";
-            options.body = JSON.stringify(data);
-          }
-          const res = await fetch(url, options);
-          const text = await res.text();
-          let payload = null;
-          if (text) {
-            try {
-              payload = JSON.parse(text);
-            } catch {
-              payload = text;
-            }
-          }
-          if (!res.ok) {
-            const message = payload?.detail || payload?.message || res.statusText || `HTTP ${res.status}`;
-            const error = new Error(message);
-            error.status = res.status;
-            error.detail = payload;
-            throw error;
-          }
-          return payload;
+          if (typeof bridge.ready === "function") await bridge.ready();
+          return await bridge.apiPost("webui/request", { method, url, data });
         } catch (error) {
           const text = errText(error);
           log(`${url}: ${text}`, "error");
@@ -2055,37 +2005,23 @@
         }, 80);
       }
 
-      function updateTokenState() {
-        const configured = !!state.token;
-        $("auth-token").value = state.token;
-        $("token-chip").textContent = configured ? "本机 token 已保存" : "本机 token 未保存";
-        $("token-chip").className = `tag ${configured ? "ok" : "warn"}`;
-        $("local-token-status").textContent = configured ? "Token 已保存" : "Token 未保存";
-        $("local-token-status").style.color = configured ? "var(--accent-strong)" : "#7f5109";
+      function updateDashboardAuthState() {
+        $("token-chip").textContent = "Dashboard 已鉴权";
+        $("token-chip").className = "tag ok";
+        $("local-token-status").textContent = "Dashboard 已鉴权";
+        $("local-token-status").style.color = "var(--accent-strong)";
         updateConfigPersistControls();
       }
 
-      function updateServerTokenState(payload) {
-        const auth = payload?.config?.auth || {};
-        const authEnabled = auth.enabled !== false;
-        const writeTokens = auth.write_tokens;
+      function updateDashboardApiState(payload) {
         const persistence = payload?.config_persistence || {};
-        state.serverTokenConfigured = authEnabled && Array.isArray(writeTokens) && writeTokens.length > 0;
         state.configPersistEnabled = !!persistence.enabled;
-        state.configPersistPath = persistence.path || "config.toml";
+        state.configPersistPath = persistence.path || "AstrBot 插件配置";
         state.configPersistReason = persistence.reason || "";
-        if (!authEnabled) {
-          $("server-token-chip").textContent = "服务端 token 已关闭";
-          $("server-token-chip").className = "tag ok";
-          $("server-token-status").textContent = "Token 鉴权已关闭";
-          $("server-token-status").style.color = "var(--accent-strong)";
-          updateConfigPersistControls();
-          return;
-        }
-        $("server-token-chip").textContent = state.serverTokenConfigured ? "服务端 token 已配置" : "服务端 token 未配置";
-        $("server-token-chip").className = `tag ${state.serverTokenConfigured ? "ok" : "warn"}`;
-        $("server-token-status").textContent = state.serverTokenConfigured ? "Token 已配置" : "Token 未配置";
-        $("server-token-status").style.color = state.serverTokenConfigured ? "var(--accent-strong)" : "#7f5109";
+        $("server-token-chip").textContent = "Dashboard 已鉴权";
+        $("server-token-chip").className = "tag ok";
+        $("server-token-status").textContent = "Dashboard 登录态";
+        $("server-token-status").style.color = "var(--accent-strong)";
         updateConfigPersistControls();
       }
 
@@ -2093,17 +2029,10 @@
         const button = $("config-persist");
         const status = $("config-persist-status");
         if (!button || !status) return;
-        const hasLocalToken = !!state.token;
-        const ready = !!state.configPersistEnabled && hasLocalToken;
+        const ready = !!state.configPersistEnabled;
         button.disabled = !ready;
         if (!state.configPersistEnabled) {
-          status.textContent = state.configPersistReason || "需要开启服务端 Token 鉴权";
-          status.style.color = "#7f5109";
-          button.title = status.textContent;
-          return;
-        }
-        if (!hasLocalToken) {
-          status.textContent = "请先保存本机 Bearer Token";
+          status.textContent = state.configPersistReason || "请在 AstrBot 插件配置页持久化配置";
           status.style.color = "#7f5109";
           button.title = status.textContent;
           return;
@@ -2353,7 +2282,7 @@
 
       function renderConfigForm(payload) {
         const config = payload?.config || {};
-        updateServerTokenState(payload);
+        updateDashboardApiState(payload);
         $("config-output").innerHTML = configFields.map((group) => `
           <section class="settings-group">
             <h3>${escapeHtml(group.title)}</h3>
@@ -3876,7 +3805,7 @@
       function clearDetail() {
         $("detail-title").textContent = "辅助面板";
         $("detail-body").innerHTML = `
-          <div class="faq-item open"><button class="faq-q">如何开始？<span>⌄</span></button><div class="faq-a">先载入图谱，或在查询页使用聚合查询。写入类操作需要配置 Bearer Token。</div></div>
+          <div class="faq-item open"><button class="faq-q">如何开始？<span>⌄</span></button><div class="faq-a">先载入图谱，或在查询页使用聚合查询。写入类操作由 AstrBot Dashboard 登录态保护。</div></div>
           <div class="faq-item"><button class="faq-q">Episode 从哪里来？<span>⌄</span></button><div class="faq-a">新增或删除段落会将 source 放入重建队列；也可以在情景页手动重建。</div></div>
           <div class="faq-item"><button class="faq-q">聚合查询包含什么？<span>⌄</span></button><div class="faq-a">聚合查询会融合语义、时间和 episode 分支，并输出混合排序结果。</div></div>
         `;
@@ -3982,18 +3911,6 @@
             hideCandidateMenu();
           }
         });
-        $("save-token").onclick = () => {
-          state.token = $("auth-token").value.trim();
-          storage.setItem("memorix_auth_token", state.token);
-          updateTokenState();
-          toast("Token 已保存");
-        };
-        $("clear-token").onclick = () => {
-          state.token = "";
-          storage.removeItem("memorix_auth_token");
-          updateTokenState();
-          toast("Token 已清除");
-        };
         $("refresh-all").onclick = refreshAll;
         $("runtime-refresh").onclick = () => loadRuntime(true);
         $("self-check-force").onclick = () => loadRuntime(true);
@@ -4065,10 +3982,10 @@
         upgradeCandidateInputs();
         bindEvents();
         relocateAside();
-        updateTokenState();
+        updateDashboardAuthState();
         ensureGraph();
         const hashView = (location.hash || "").replace("#", "");
-        const pathView = location.pathname === "/import" ? "import" : "";
+        const pathView = "";
         if (titles[hashView]) setView(hashView);
         else if (titles[pathView]) setView(pathView);
         await refreshAll();

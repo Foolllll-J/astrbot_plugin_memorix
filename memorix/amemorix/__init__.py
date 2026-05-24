@@ -1,4 +1,4 @@
-"""Standalone runtime package for A_Memorix."""
+"""A_Memorix runtime package embedded in AstrBot."""
 
 __version__ = "1.0.0"
 

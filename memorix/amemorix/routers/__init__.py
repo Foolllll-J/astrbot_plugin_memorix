@@ -1,2 +1,2 @@
-"""HTTP routers for standalone API."""
+"""HTTP routers for embedded WebUI API."""
 

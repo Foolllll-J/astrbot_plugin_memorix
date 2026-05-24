@@ -15,7 +15,6 @@ from .memorix.commands.mem_commands import to_pretty_text
 from .memorix.scope_router import ScopeRouter
 from .memorix.services import IngestService, MemoryService, ProfileService, QueryService, SummaryService
 from .memorix.tasks.maintenance_scheduler import MaintenanceScheduler
-from .memorix.webui import EmbeddedWebUIServer
 from .memorix.webui.plugin_page_bridge import PluginPageWebUIBridge
 
 
@@ -38,7 +37,6 @@ class MemorixPlugin(Star):
         self.profile_service = ProfileService(self.runtime_manager)
         self.summary_service = SummaryService(self.runtime_manager)
         self.maintenance_scheduler = MaintenanceScheduler(runtime_manager=self.runtime_manager)
-        self.webui_server = EmbeddedWebUIServer(self.runtime_manager, self.config)
         self.webui_page_bridge = PluginPageWebUIBridge(
             runtime_manager=self.runtime_manager,
             plugin_config=self.config,
@@ -48,25 +46,10 @@ class MemorixPlugin(Star):
     async def initialize(self):
         logger.info("[memorix] initialize start")
         self.webui_page_bridge.register(self.context, plugin_name="astrbot_plugin_memorix")
-        if bool(self.config.get("webui", {}).get("enabled", True)):
-            try:
-                ui_scope = self._resolve_webui_scope()
-                if ui_scope:
-                    state = await self.webui_server.start(scope_key=ui_scope)
-                    if state.url:
-                        logger.info("[memorix] WebUI started at %s (scope=%s)", state.url, state.scope_key)
-                else:
-                    logger.info("[memorix] WebUI start deferred until a concrete scope becomes active")
-            except Exception as exc:
-                logger.error("[memorix] WebUI start failed: %s", exc, exc_info=True)
         logger.info("[memorix] initialize done")
 
     async def terminate(self):
         logger.info("[memorix] terminate start")
-        try:
-            self.webui_server.stop()
-        except Exception:
-            pass
         await self.webui_page_bridge.close()
         await self.runtime_manager.close_all()
         logger.info("[memorix] terminate done")
@@ -74,58 +57,15 @@ class MemorixPlugin(Star):
     def _resolve_scope(self, event: AstrMessageEvent) -> str:
         return self.scope_router.resolve(event)
 
-    def _resolve_webui_scope(self, event: Optional[AstrMessageEvent] = None) -> str:
-        configured = str(self.config.get("webui", {}).get("scope", "auto") or "auto").strip()
-        mode = configured.lower()
-        if mode not in {"", "auto", "current", "event"}:
-            return configured
-        if event is not None:
-            return self._resolve_scope(event)
-        known_scopes = self.runtime_manager.get_known_scopes()
-        if known_scopes:
-            return str(known_scopes[-1])
-        return ""
-
     def _resolve_dashboard_webui_scope(self) -> str:
         configured = str(self.config.get("webui", {}).get("scope", "auto") or "auto").strip()
         mode = configured.lower()
         if mode not in {"", "auto", "current", "event"}:
             return configured
-        if self.webui_server.state.scope_key:
-            return self.webui_server.state.scope_key
         known_scopes = self.runtime_manager.get_known_scopes()
         if known_scopes:
             return str(known_scopes[-1])
         return "default"
-
-    async def _ensure_webui_scope_ready(self, scope_key: str) -> None:
-        if not bool(self.config.get("webui", {}).get("enabled", True)):
-            return
-
-        configured = str(self.config.get("webui", {}).get("scope", "auto") or "auto").strip().lower()
-        if configured not in {"", "auto", "current", "event"}:
-            return
-
-        target_scope = str(scope_key or "").strip()
-        if not target_scope:
-            return
-
-        state = self.webui_server.state
-        if not state.url:
-            await self.webui_server.start(scope_key=target_scope)
-            logger.info("[memorix] WebUI auto-started at %s (scope=%s)", self.webui_server.state.url, self.webui_server.state.scope_key)
-            return
-
-        known_scopes = self.runtime_manager.get_known_scopes()
-        current_scope = str(state.scope_key or "").strip()
-        if current_scope in known_scopes:
-            return
-        if len(known_scopes) != 1 or target_scope not in known_scopes or current_scope == target_scope:
-            return
-
-        logger.info("[memorix] auto-switching webui scope: from=%s to=%s", current_scope or "<deferred>", target_scope)
-        self.webui_server.stop()
-        await self.webui_server.start(scope_key=target_scope)
 
     @staticmethod
     def _bool_cfg(config: Dict[str, Any], key: str, default: bool) -> bool:
@@ -427,15 +367,6 @@ class MemorixPlugin(Star):
             timestamp=adapted.timestamp,
             time_meta={"event_time": adapted.timestamp} if adapted.timestamp else None,
         )
-        try:
-            await self._ensure_webui_scope_ready(adapted.scope_key)
-        except Exception as exc:
-            logger.warning(
-                "[memorix] ensure webui scope ready failed: %s (%s)",
-                exc,
-                self._event_ctx_text(event, adapted.scope_key),
-                exc_info=True,
-            )
         logger.debug(
             "[memorix] ingested role=%s chars=%s %s",
             role,
@@ -694,8 +625,9 @@ class MemorixPlugin(Star):
             "scope": scope_key,
             "known_scopes": self.runtime_manager.get_known_scopes(),
             "webui": {
-                "url": self.webui_server.state.url,
-                "scope": self.webui_server.state.scope_key,
+                "embedded": True,
+                "scope": self._resolve_dashboard_webui_scope(),
+                "page": "Dashboard -> 插件详情 -> Memorix 控制台",
             },
             "scheduler": scheduler,
             "memory": data,
@@ -1079,32 +1011,3 @@ class MemorixPlugin(Star):
         except Exception as exc:
             logger.error("[memorix] mem summary_all failed: %s", exc, exc_info=True)
             yield event.plain_result(f"全量总结失败: {exc}")
-
-    @mem.command("ui")
-    async def mem_ui(self, event: AstrMessageEvent):
-        """获取 WebUI 管理页面的访问地址。"""
-        if not bool(self.config.get("webui", {}).get("enabled", True)):
-            yield event.plain_result("WebUI 已禁用")
-            return
-        self._log_cmd(event, "ui")
-        try:
-            desired_scope = self._resolve_scope(event)
-            if self.webui_server.state.url and self.webui_server.state.scope_key != desired_scope:
-                logger.info(
-                    "[memorix] switching webui scope: from=%s to=%s",
-                    self.webui_server.state.scope_key,
-                    desired_scope,
-                )
-                self.webui_server.stop()
-
-            if not self.webui_server.state.url:
-                state = await self.webui_server.start(scope_key=desired_scope)
-                if not state.url:
-                    yield event.plain_result("WebUI 启动失败")
-                    return
-            yield event.plain_result(
-                f"Memorix WebUI: {self.webui_server.state.url} (scope={self.webui_server.state.scope_key})"
-            )
-        except Exception as exc:
-            logger.error("[memorix] mem ui failed: %s", exc, exc_info=True)
-            yield event.plain_result(f"WebUI 启动失败: {exc}")

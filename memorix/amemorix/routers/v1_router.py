@@ -1,4 +1,4 @@
-"""New standalone operation APIs (/v1/*)."""
+"""Operation APIs (/v1/*) for the embedded WebUI."""
 
 from __future__ import annotations
 

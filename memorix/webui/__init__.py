@@ -1,5 +1,5 @@
-"""WebUI server package."""
+"""AstrBot Dashboard embedded Memorix WebUI support."""
 
-from .server import EmbeddedWebUIServer
+from .plugin_page_bridge import PluginPageWebUIBridge
 
-__all__ = ["EmbeddedWebUIServer"]
+__all__ = ["PluginPageWebUIBridge"]

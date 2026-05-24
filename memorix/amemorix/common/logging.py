@@ -1,4 +1,4 @@
-"""Local logging helpers for standalone runtime."""
+"""Local logging helpers for Memorix runtime."""
 
 from __future__ import annotations
 

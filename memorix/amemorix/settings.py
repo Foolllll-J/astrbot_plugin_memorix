@@ -1,4 +1,4 @@
-"""Configuration loading for standalone runtime."""
+"""Configuration loading for Memorix runtime."""
 
 from __future__ import annotations
 
@@ -17,13 +17,6 @@ logger = get_logger("A_Memorix.Settings")
 
 
 DEFAULT_CONFIG: Dict[str, Any] = {
-    "server": {"host": "0.0.0.0", "port": 8082, "workers": 1},
-    "auth": {
-        "enabled": True,
-        "write_tokens": [],
-        "read_tokens": [],
-        "protect_read_endpoints": False,
-    },
     "cors": {"allow_origins": []},
     "storage": {"data_dir": "./data"},
     "embedding": {
@@ -356,12 +349,6 @@ def mask_sensitive(config: Dict[str, Any]) -> Dict[str, Any]:
             return "*" * len(text)
         return f"{text[:2]}***{text[-2:]}"
 
-    auth = out.get("auth", {})
-    if isinstance(auth, dict):
-        for key in ("write_tokens", "read_tokens"):
-            values = auth.get(key)
-            if isinstance(values, list):
-                auth[key] = [_mask(v) for v in values]
     emb = out.get("embedding", {})
     if isinstance(emb, dict):
         for key in ("openai", "openapi"):
@@ -417,16 +404,6 @@ class AppSettings:
     def get_openapi_endpoint_config(self) -> Dict[str, Any]:
         return resolve_openapi_endpoint_config(self.config)
 
-    @property
-    def host(self) -> str:
-        return str(self.get("server.host", "0.0.0.0"))
-
-    @property
-    def port(self) -> int:
-        try:
-            return int(self.get("server.port", 8082))
-        except (TypeError, ValueError):
-            return 8082
 
     @property
     def workers(self) -> int:

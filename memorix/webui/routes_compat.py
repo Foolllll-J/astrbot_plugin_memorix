@@ -1,13 +1,8 @@
 
 import asyncio
-import threading
 import json
-import uvicorn
 from fastapi import FastAPI, HTTPException, Body, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
-from pathlib import Path
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 
@@ -73,15 +68,9 @@ class PersonProfileOverrideDeleteRequest(BaseModel):
     person_id: str
 
 class MemorixServer:
-    def __init__(self, plugin_instance, host="0.0.0.0", port=8082):
+    def __init__(self, plugin_instance):
         self.plugin = plugin_instance
-        self.host = host
-        self.port = port
         self.app = FastAPI(title="A_Memorix 可视化编辑器")
-        self.server_thread = None
-        self._server = None
-        self._server = None
-        self.should_exit = False
         
         # 缓存 relations predicate map
         self._relation_cache = None
@@ -99,10 +88,6 @@ class MemorixServer:
             allow_methods=["*"],
             allow_headers=["*"],
         )
-
-        assets_dir = Path(__file__).parent / "web" / "assets"
-        if assets_dir.exists():
-            self.app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
         
         self._setup_routes()
 
@@ -1308,44 +1293,3 @@ class MemorixServer:
             self.plugin._runtime_auto_save = data.enabled
             logger.info(f"自动保存已{'启用' if data.enabled else '禁用'}（运行时）")
             return {"success": True, "auto_save_enabled": data.enabled}
-
-        @self.app.get("/import")
-        async def import_page():
-            """返回导入中心页面"""
-            if not bool(self.plugin.get_config("web.import.enabled", False)):
-                raise HTTPException(status_code=404, detail="导入功能未启用")
-            html_path = Path(__file__).parent / "web" / "import.html"
-            if html_path.exists():
-                return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
-            return HTMLResponse(content="<h1>Import UI Not Found</h1>", status_code=404)
-
-        @self.app.get("/")
-        async def index():
-            """返回主页"""
-            html_path = Path(__file__).parent / "web" / "index.html"
-            if html_path.exists():
-                return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
-            return HTMLResponse(content="<h1>UI Not Found</h1>")
-
-    def run(self):
-        """运行服务器 (阻塞)"""
-        logger.info(f"正在启动 A_Memorix WebUI，地址：{self.host}:{self.port}")
-        config = uvicorn.Config(self.app, host=self.host, port=self.port, log_level="info")
-        self._server = uvicorn.Server(config)
-        self._server.run()
-
-    def start(self):
-        """在独立线程启动"""
-        if self.server_thread and self.server_thread.is_alive():
-            return
-            
-        self.server_thread = threading.Thread(target=self.run, daemon=True)
-        self.server_thread.start()
-        
-    def stop(self):
-        """停止服务器"""
-        if self._server:
-            self._server.should_exit = True
-        if self.server_thread:
-            self.server_thread.join(timeout=2)
-            logger.info("A_Memorix WebUI 已停止")

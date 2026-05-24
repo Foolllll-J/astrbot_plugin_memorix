@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
+import uuid
 from dataclasses import dataclass
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional, Set
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
@@ -12,12 +14,138 @@ from astrbot.api import logger
 
 from ..amemorix.import_write_guard import ImportWriteGuardMiddleware
 from ..amemorix.routers.v1_router import router as v1_router
+from ..amemorix.services import ImportService, SummaryService
 from ..amemorix.services.import_task_manager import ImportTaskManager
 from ..app_context import ScopeRuntimeManager
 from .routes_compat import MemorixServer
-from .server import _WebV1TaskManager
+
+TASK_STATUS_RUNNING = "running"
+TASK_STATUS_SUCCEEDED = "succeeded"
+TASK_STATUS_FAILED = "failed"
+TASK_STATUS_CANCELED = "canceled"
 
 PLUGIN_PAGE_API_ROUTE = "webui/request"
+
+
+class _WebV1TaskManager:
+    """Minimal v1 task manager for the Dashboard embedded WebUI."""
+
+    def __init__(self, ctx: Any):
+        self.ctx = ctx
+        self.import_service = ImportService(ctx)
+        self.summary_service = SummaryService(ctx)
+        self._jobs: Set[asyncio.Task] = set()
+
+    async def start(self) -> None:
+        return None
+
+    async def stop(self) -> None:
+        jobs = list(self._jobs)
+        self._jobs.clear()
+        for job in jobs:
+            job.cancel()
+        if jobs:
+            await asyncio.gather(*jobs, return_exceptions=True)
+
+    def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        return self.ctx.metadata_store.get_async_task(task_id)
+
+    async def enqueue_import_task(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        task_id = uuid.uuid4().hex
+        task = self.ctx.metadata_store.create_async_task(task_id=task_id, task_type="import", payload=payload)
+        job = asyncio.create_task(self._run_import(task_id, payload), name=f"webui-import-{task_id[:8]}")
+        self._jobs.add(job)
+        job.add_done_callback(lambda t: self._jobs.discard(t))
+        return task
+
+    async def enqueue_summary_task(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        task_id = uuid.uuid4().hex
+        task = self.ctx.metadata_store.create_async_task(task_id=task_id, task_type="summary", payload=payload)
+        job = asyncio.create_task(self._run_summary(task_id, payload), name=f"webui-summary-{task_id[:8]}")
+        self._jobs.add(job)
+        job.add_done_callback(lambda t: self._jobs.discard(t))
+        return task
+
+    async def _run_import(self, task_id: str, payload: Dict[str, Any]) -> None:
+        try:
+            existing = self.ctx.metadata_store.get_async_task(task_id)
+            if existing and existing.get("cancel_requested"):
+                self.ctx.metadata_store.update_async_task(
+                    task_id=task_id,
+                    status=TASK_STATUS_CANCELED,
+                    finished_at=datetime.datetime.now().timestamp(),
+                )
+                return
+
+            now = datetime.datetime.now().timestamp()
+            self.ctx.metadata_store.update_async_task(task_id=task_id, status=TASK_STATUS_RUNNING, started_at=now)
+            mode = str(payload.get("mode", "text"))
+            body = payload.get("payload")
+            options = payload.get("options") if isinstance(payload.get("options"), dict) else {}
+            result = await self.import_service.run_import(mode=mode, payload=body, options=options)
+            self.ctx.metadata_store.update_async_task(
+                task_id=task_id,
+                status=TASK_STATUS_SUCCEEDED,
+                result=result,
+                finished_at=datetime.datetime.now().timestamp(),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self.ctx.metadata_store.update_async_task(
+                task_id=task_id,
+                status=TASK_STATUS_FAILED,
+                error_message=str(exc),
+                finished_at=datetime.datetime.now().timestamp(),
+            )
+            logger.error("webui import task failed task=%s err=%s", task_id, exc, exc_info=True)
+
+    async def _run_summary(self, task_id: str, payload: Dict[str, Any]) -> None:
+        try:
+            existing = self.ctx.metadata_store.get_async_task(task_id)
+            if existing and existing.get("cancel_requested"):
+                self.ctx.metadata_store.update_async_task(
+                    task_id=task_id,
+                    status=TASK_STATUS_CANCELED,
+                    finished_at=datetime.datetime.now().timestamp(),
+                )
+                return
+
+            self.ctx.metadata_store.update_async_task(
+                task_id=task_id,
+                status=TASK_STATUS_RUNNING,
+                started_at=datetime.datetime.now().timestamp(),
+            )
+            session_id = str(payload.get("session_id", "")).strip() or uuid.uuid4().hex
+            messages = payload.get("messages") if isinstance(payload.get("messages"), list) else []
+            source = str(payload.get("source", f"chat_summary:{session_id}"))
+            context_length = int(payload.get("context_length", self.ctx.get_config("summarization.context_length", 50)))
+            persist_messages = bool(payload.get("persist_messages", False))
+            result = await self.summary_service.import_from_transcript(
+                session_id=session_id,
+                messages=messages,
+                source=source,
+                context_length=context_length,
+                persist_messages=persist_messages,
+            )
+            status = TASK_STATUS_SUCCEEDED if result.get("success") else TASK_STATUS_FAILED
+            self.ctx.metadata_store.update_async_task(
+                task_id=task_id,
+                status=status,
+                result=result,
+                error_message="" if result.get("success") else str(result.get("message", "")),
+                finished_at=datetime.datetime.now().timestamp(),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self.ctx.metadata_store.update_async_task(
+                task_id=task_id,
+                status=TASK_STATUS_FAILED,
+                error_message=str(exc),
+                finished_at=datetime.datetime.now().timestamp(),
+            )
+            logger.error("webui summary task failed task=%s err=%s", task_id, exc, exc_info=True)
 
 
 @dataclass(slots=True)
@@ -30,11 +158,11 @@ class _EmbeddedWebUIApp:
 
 
 class PluginPageWebUIBridge:
-    """Expose the standalone FastAPI WebUI through AstrBot Plugin Pages.
+    """Expose the Memorix FastAPI WebUI API through AstrBot Plugin Pages.
 
     AstrBot Plugin Pages only proxy GET/POST requests to plugin Web APIs. The
     current A_memorix console still uses PUT/PATCH/DELETE, so the page sends a
-    single authenticated POST tunnel here and this bridge dispatches the original
+    single AstrBot-proxied POST tunnel here and this bridge dispatches the original
     request to an in-process FastAPI app for the selected Memorix scope.
     """
 
@@ -181,7 +309,7 @@ class PluginPageWebUIBridge:
 
     async def _create_app(self, scope_key: str) -> _EmbeddedWebUIApp:
         runtime = await self.runtime_manager.get_runtime(scope_key)
-        server = MemorixServer(plugin_instance=runtime.context, host="127.0.0.1", port=0)
+        server = MemorixServer(plugin_instance=runtime.context)
         app = server.app
         app.state.context = runtime.context
         if not bool(getattr(app.state, "_memorix_v1_router_registered", False)):

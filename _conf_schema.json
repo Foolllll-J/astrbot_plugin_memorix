@@ -531,76 +531,27 @@
   },
   "webui": {
     "type": "object",
-    "description": "内嵌管理界面（WebUI）—— 可视化浏览和管理记忆数据",
-    "hint": "Memorix 内置了一个 Web 管理界面，可以可视化浏览知识图谱、管理记忆条目、查看回收站、编辑人物画像等。启动后可通过 /mem ui 获取访问地址。",
+    "description": "AstrBot Dashboard 内嵌管理界面（WebUI）—— 可视化浏览和管理记忆数据",
+    "hint": "Memorix 通过 AstrBot Plugin Pages 提供内嵌控制台。可在 AstrBot Dashboard 的插件详情页打开“Memorix 控制台”。",
     "items": {
       "enabled": {
         "type": "bool",
-        "description": "启用 WebUI",
-        "hint": "关闭后将不会启动 Web 管理界面。如果不需要可视化管理，可以关闭。",
+        "description": "启用 Dashboard 内嵌 WebUI 接口",
+        "hint": "关闭后仍可能看到插件页入口，但页面请求会被拒绝；通常保持开启。",
         "default": true
-      },
-      "host": {
-        "type": "string",
-        "description": "WebUI 监听地址",
-        "hint": "WebUI 服务器绑定的网络地址。0.0.0.0 表示监听所有网络接口（可从外部访问），127.0.0.1 表示仅本机可访问。",
-        "default": "0.0.0.0"
-      },
-      "port": {
-        "type": "int",
-        "description": "WebUI 监听端口",
-        "hint": "WebUI 服务器使用的端口号。如果端口被占用，插件会自动尝试递增端口号。",
-        "default": 8092
-      },
-      "port_fallback_max_tries": {
-        "type": "int",
-        "description": "端口冲突时的最大重试次数",
-        "hint": "当指定端口被占用时，插件会从该端口开始逐一递增尝试。此值决定最多尝试多少次。",
-        "default": 20
       },
       "scope": {
         "type": "string",
         "description": "WebUI 绑定的作用域",
-        "hint": "auto（推荐）：WebUI 自动绑定到当前活跃的作用域。也可手动指定作用域标识（如 aiocqhttp）来固定 WebUI 只展示特定作用域的数据。",
+        "hint": "auto（推荐）：使用最近活跃作用域。也可手动指定作用域标识来固定 WebUI 只展示特定作用域的数据。首次打开且无活跃会话时回退到 default。",
         "default": "auto"
-      },
-      "auth": {
-        "type": "object",
-        "description": "WebUI 鉴权配置",
-        "hint": "为 WebUI 的 API 接口添加鉴权保护。如果 WebUI 暴露在公网或不可信网络中，强烈建议开启鉴权。",
-        "items": {
-          "enabled": {
-            "type": "bool",
-            "description": "启用 API 鉴权",
-            "hint": "开启后，访问 WebUI 的 API 需要在请求头中携带有效的 Bearer Token。关闭则所有人都可以直接访问。",
-            "default": false
-          },
-          "write_tokens": {
-            "type": "list",
-            "description": "写操作 Token 列表",
-            "hint": "拥有写权限的 Token 列表，持有这些 Token 的请求可以执行删除、修改、导入等写操作。可设置多个 Token 分配给不同的管理者。",
-            "default": []
-          },
-          "read_tokens": {
-            "type": "list",
-            "description": "读操作 Token 列表",
-            "hint": "拥有读权限的 Token 列表，持有这些 Token 的请求只能查看数据。仅在开启 protect_read_endpoints 时需要。",
-            "default": []
-          },
-          "protect_read_endpoints": {
-            "type": "bool",
-            "description": "对读接口也启用鉴权",
-            "hint": "默认情况下鉴权仅保护写接口（增删改），读接口（查询、浏览）不需要 Token。开启后读接口也需要 Token，适合记忆内容涉及敏感信息的场景。",
-            "default": false
-          }
-        }
       }
     }
   },
   "web": {
     "type": "object",
     "description": "导入中心 —— 通过 Web 界面批量导入外部知识到记忆系统",
-    "hint": "导入中心提供了一个独立的 Web 页面（/import），支持上传文件（.txt/.md/.json）、粘贴文本和扫描目录三种方式导入外部知识。默认关闭，需手动开启。",
+    "hint": "导入中心集成在 Dashboard 内嵌 WebUI 中，支持上传文件、粘贴文本和扫描目录三种方式导入外部知识。默认关闭，需手动开启。",
     "items": {
       "import": {
         "type": "object",
@@ -610,7 +561,7 @@
           "enabled": {
             "type": "bool",
             "description": "启用导入中心",
-            "hint": "开启后可通过 WebUI 的 /import 页面和 /v1/import/* API 接口导入外部文件和文本到记忆系统。如果不需要导入外部知识，保持关闭即可。",
+            "hint": "开启后可通过 Dashboard 内嵌 WebUI 的导入视图和 /v1/import/* API 导入外部文件和文本到记忆系统。如果不需要导入外部知识，保持关闭即可。",
             "default": false,
             "obvious_hint": true
           },

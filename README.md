@@ -51,7 +51,7 @@
 
 ### 内嵌 WebUI
 
-基于 FastAPI 的单页管理界面，默认端口 `8092`（端口冲突自动探测），提供：图谱浏览与关系编辑、记忆管理与来源追踪、回收站恢复、人物画像管理。可选 Bearer Token 鉴权。
+基于 AstrBot Plugin Pages 的 Dashboard 内嵌管理界面，提供：图谱浏览与关系编辑、记忆管理与来源追踪、回收站恢复、人物画像管理。接口经 AstrBot Dashboard 鉴权后转发到插件内 runtime。
 
 ### A_memorix 0.6.1 服务层同步
 
@@ -65,13 +65,13 @@
 
 ### 导入中心（可选启用）
 
-新增 `/import` 导入中心（默认关闭，需手动在配置文件处开启 `web.import.enabled=true`）。页面可进行如下三种导入：
+新增 Dashboard 内嵌导入视图（默认关闭，需手动在配置文件处开启 `web.import.enabled=true`）。页面可进行如下三种导入：
 - 上传文件导入（`.txt/.md/.json`）
 - 粘贴文本导入
 - 原始目录扫描导入（`raw` / `plugin_data` 别名）
 
 导入中心支持手动选择 `knowledge_type`（`auto/factual/narrative/structured/mixed`），并提供任务级/文件级/分块级状态观察、任务取消与失败重试。
-详细说明可见：`memorix/IMPORT_GUIDE.md`（同样可通过 `/v1/import/guide` 获取）。
+详细说明可见：`memorix/IMPORT_GUIDE.md`。
 
 ## 工作流
 
@@ -128,14 +128,13 @@ https://github.com/exynos967/astrbot_plugin_memorix
 
 | 命令 | 说明 |
 |---|---|
-| `/mem status` | 查看作用域、WebUI、调度器状态 |
+| `/mem status` | 查看作用域、内嵌 WebUI、调度器状态 |
 | `/mem query <关键词> [top_k]` | 混合语义检索 |
 | `/mem time <起始时间> [结束时间] [关键词]` | 时序检索 |
 | `/mem episode [关键词] [top_k]` | Episode 检索 |
 | `/mem aggregate <关键词> [top_k]` | 聚合 search/time/episode 召回 |
 | `/mem profile [人物关键词] [top_k]` | 查询人物画像 |
 | `/mem summary_now [上下文长度]` | 立即生成会话总结并写入记忆 |
-| `/mem ui` | 获取 WebUI 访问地址 |
 | `/person_profile on\|off\|status` | 控制当前会话+用户的人物画像注入开关 |
 
 ### 管理员命令
@@ -267,30 +266,20 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 
 ### WebUI
 
-插件同时提供两种入口：
+插件只保留 **AstrBot Dashboard 内嵌页**：AstrBot `>=4.24.2` 可在插件详情页的 `Memorix 控制台` 页面中直接打开，接口经 AstrBot Dashboard 鉴权后转发到当前 Memorix runtime。
 
-- **AstrBot Dashboard 内嵌页**：AstrBot `>=4.24.2` 可在插件详情页的 `Memorix 控制台` 页面中直接打开，接口经 AstrBot Dashboard 鉴权后转发到当前 Memorix runtime。
-- **独立 WebUI 服务**：继续保留 `/mem ui`，用于从聊天会话快速打开指定 scope 的独立管理页面。
-
-内嵌页的 scope 选择与独立 WebUI 保持一致：固定 `webui.scope` 时使用固定值；`auto/current/event` 时优先复用独立 WebUI 当前 scope，其次使用最近活跃 scope，首次打开且无活跃会话时回退到 `default`。
+内嵌页的 scope 选择：固定 `webui.scope` 时使用固定值；`auto/current/event` 时使用最近活跃 scope，首次打开且无活跃会话时回退到 `default`。
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `webui.enabled` | bool | `true` | 启用 WebUI |
-| `webui.host` | string | `0.0.0.0` | 监听地址 |
-| `webui.port` | int | `8092` | 监听端口 |
-| `webui.port_fallback_max_tries` | int | `20` | 端口冲突回退尝试次数 |
-| `webui.scope` | string | `auto` | WebUI 绑定作用域，`auto` 跟随当前会话作用域 |
-| `webui.auth.enabled` | bool | `false` | 启用 Bearer 鉴权 |
-| `webui.auth.write_tokens` | list | `[]` | 写接口 Token 列表 |
-| `webui.auth.read_tokens` | list | `[]` | 读接口 Token 列表 |
-| `webui.auth.protect_read_endpoints` | bool | `false` | 是否对读接口启用鉴权 |
+| `webui.enabled` | bool | `true` | 启用 Dashboard 内嵌 WebUI 接口 |
+| `webui.scope` | string | `auto` | WebUI 绑定作用域，`auto` 使用最近活跃作用域 |
 
 ### 导入中心（web.import）
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `web.import.enabled` | bool | `false` | 启用导入中心 `/import` 与增强导入接口 |
+| `web.import.enabled` | bool | `false` | 启用 Dashboard 内嵌导入视图与增强导入接口 |
 | `web.import.max_queue_size` | int | `20` | 导入任务队列上限 |
 | `web.import.max_files_per_task` | int | `200` | 单任务最大文件数 |
 | `web.import.max_file_size_mb` | int | `20` | 单文件大小上限（MB） |
@@ -304,7 +293,6 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 
 ## 前端目录说明
 
-- WebUI 运行时实际读取：`memorix/webui/web/*`
 - AstrBot Dashboard 插件内嵌页读取：`pages/memorix/*`
 
 ## 依赖
@@ -314,7 +302,7 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | `numpy` | 向量计算 & 降级向量存储 |
 | `scipy` | 图谱稀疏矩阵 |
 | `faiss-cpu` | 高性能向量索引（失败自动降级 Numpy） |
-| `fastapi` + `uvicorn` | 内嵌 WebUI 服务 |
+| `fastapi` | Dashboard 内嵌 WebUI API 应用 |
 | `httpx` | AstrBot Dashboard 内嵌页到 FastAPI WebUI 的进程内请求转发 |
 | `pydantic` | 数据校验 |
 | `jieba` | 中文分词（BM25 检索） |
@@ -359,9 +347,9 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 
 建议在你要查看的那个群或私聊里按顺序执行：
 
-1. `/mem status`，确认当前返回的 `scope`
-2. `/mem ui`，让 WebUI 切换到当前对话范围
-3. 重新打开或刷新 WebUI 页面
+1. 发送一条消息或执行 `/mem status`，确认当前返回的 `scope`
+2. 在 AstrBot Dashboard 插件详情页打开 `Memorix 控制台`
+3. 如需固定查看范围，在插件配置里设置 `webui.scope`
 
 </details>
 

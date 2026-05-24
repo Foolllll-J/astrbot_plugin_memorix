@@ -1,6 +1,6 @@
 # A_Memorix 导入中心指南
 
-本文档仅描述当前 `/import` 页面与 `/v1/import/*` 增强接口的实际能力。
+本文档仅描述当前 Dashboard 内嵌导入视图与 `/v1/import/*` 增强接口的实际能力。
 
 ## 功能范围
 
@@ -30,7 +30,7 @@
 
 ## 页面入口
 
-- 页面路由：`GET /import`
+- 页面入口：AstrBot Dashboard → 插件详情 → Memorix 控制台 → 导入
 - 默认关闭，需要配置：`web.import.enabled = true`
 
 ## 任务能力

@@ -127,14 +127,6 @@ class ScopeRuntimeManager:
         cfg.setdefault("storage", {})
         cfg["storage"]["data_dir"] = str(self._scope_dir(scope_key))
 
-        webui_cfg = cfg.get("webui", {}) if isinstance(cfg.get("webui"), dict) else {}
-        auth_cfg = webui_cfg.get("auth", {}) if isinstance(webui_cfg.get("auth"), dict) else {}
-        cfg.setdefault("auth", {})
-        cfg["auth"]["enabled"] = bool(auth_cfg.get("enabled", False))
-        cfg["auth"]["write_tokens"] = list(auth_cfg.get("write_tokens", []))
-        cfg["auth"]["read_tokens"] = list(auth_cfg.get("read_tokens", []))
-        cfg["auth"]["protect_read_endpoints"] = bool(auth_cfg.get("protect_read_endpoints", False))
-
         return cfg
 
     def _build_provider_bridge(self) -> Optional[AstrBotProviderBridge]:

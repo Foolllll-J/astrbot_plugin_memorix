@@ -1,4 +1,4 @@
-"""Bootstrap standalone runtime components."""
+"""Bootstrap Memorix runtime components."""
 
 from __future__ import annotations
 
