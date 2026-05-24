@@ -1181,13 +1181,27 @@
       }
 
       .log {
-        max-height: 150px;
+        max-height: none;
+        min-height: 320px;
         overflow: auto;
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 6px;
         color: var(--muted);
         font-size: 12px;
+        padding: 4px 2px;
+      }
+
+      #view-logs .log > div {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 0;
+        border-bottom: 1px solid var(--border);
+      }
+
+      #view-logs .log > div:last-child {
+        border-bottom: 0;
       }
 
       .empty {
@@ -1444,6 +1458,7 @@
             <button class="nav-btn" data-view="sources"><span class="nav-icon">S</span><span>来源</span></button>
             <button class="nav-btn" data-view="memory"><span class="nav-icon">M</span><span>记忆</span></button>
             <button class="nav-btn" data-view="settings"><span class="nav-icon">C</span><span>设置</span></button>
+            <button class="nav-btn" data-view="logs"><span class="nav-icon">L</span><span>日志</span></button>
           </nav>
         </aside>
 
@@ -1778,6 +1793,19 @@
               </div>
             </section>
 
+            <section id="view-logs" class="view">
+              <div class="band" style="margin-top:0">
+                <div class="panel-title">
+                  <h2>操作日志</h2>
+                  <div class="toolbar">
+                    <span class="section-label">仅保留近 200 条</span>
+                    <button class="btn" id="activity-log-clear">清空日志</button>
+                  </div>
+                </div>
+                <div id="activity-log" class="log"></div>
+              </div>
+            </section>
+
             <div id="responsive-aside-slot" class="responsive-aside-slot"></div>
           </div>
         </main>
@@ -1822,7 +1850,7 @@
 
           <div class="side-card">
             <div class="side-head"><strong>操作日志</strong></div>
-            <div class="side-body"><div id="activity-log" class="log"></div></div>
+            <div class="side-body"><div id="activity-log-aside" class="log"></div></div>
           </div>
         </aside>
       </div>
@@ -1885,6 +1913,7 @@
         sources: ["Sources", "来源文件、段落证据与批量清理"],
         memory: ["Memory Ops", "强化、保护、冷冻与回收站恢复"],
         settings: ["Settings", "配置、自检、保存和访问令牌"],
+        logs: ["Activity Logs", "近期 API 请求、自检与配置变更记录"],
       };
 
       const $ = (id) => document.getElementById(id);
@@ -1930,10 +1959,11 @@
 
       function log(message, level = "info") {
         const root = $("activity-log");
+        if (!root) return;
         const item = document.createElement("div");
         item.innerHTML = `<span class="tag ${level === "error" ? "bad" : level === "warn" ? "warn" : "ok"}">${nowText()}</span> ${escapeHtml(message)}`;
         root.prepend(item);
-        while (root.children.length > 12) root.removeChild(root.lastChild);
+        while (root.children.length > 200) root.removeChild(root.lastChild);
       }
 
       function toast(message) {
@@ -3985,6 +4015,14 @@
         $("config-load").onclick = loadConfig;
         $("config-save").onclick = () => saveRuntimeConfig(false).catch((error) => toast(errText(error)));
         $("config-persist").onclick = () => saveRuntimeConfig(true).catch((error) => toast(errText(error)));
+        const activityClear = $("activity-log-clear");
+        if (activityClear) {
+          activityClear.onclick = () => {
+            const root = $("activity-log");
+            if (root) root.innerHTML = "";
+            toast("已清空操作日志");
+          };
+        }
       }
 
       window.setView = setView;
