@@ -2,15 +2,151 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, Optional
 
 from ..app_context import ScopeRuntimeManager
+from ..core.storage import detect_knowledge_type
+from ..core.utils.hash import compute_hash, normalize_text
 
 
 class IngestService:
     def __init__(self, runtime_manager: ScopeRuntimeManager, plugin_config: Dict[str, Any]):
         self.runtime_manager = runtime_manager
         self.plugin_config = plugin_config or {}
+
+    @staticmethod
+    def _nested(config: Dict[str, Any], key: str, default: Any = None) -> Any:
+        current: Any = config
+        for part in key.split("."):
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
+                return default
+        return current
+
+    def _direct_enabled(self, role: str) -> bool:
+        mode = str(self._nested(self.plugin_config, "ingest.memory_write_mode", "direct") or "direct").strip().lower()
+        if mode not in {"direct", "transcript_only", "both"}:
+            mode = "direct"
+        if mode == "transcript_only":
+            return False
+        if str(role or "").strip().lower() == "assistant":
+            return bool(self._nested(self.plugin_config, "ingest.direct_write_assistant", True))
+        return True
+
+    def _build_source(self, source_type: str, session_id: str, person_ids: list[str]) -> str:
+        kind = str(source_type or "chat").strip() or "chat"
+        session = str(session_id or "").strip()
+        if person_ids:
+            return f"{kind}:{session}:{','.join(person_ids)}"
+        if session:
+            return f"{kind}:{session}"
+        return kind
+
+    async def _write_direct_memory(
+        self,
+        *,
+        ctx: Any,
+        session_id: str,
+        role: str,
+        text: str,
+        source: str,
+        user_id: str,
+        group_id: str,
+        platform: str,
+        unified_msg_origin: str,
+        sender_name: str,
+        message_id: str,
+        role_origin: str,
+        timestamp: float,
+        time_meta: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        content = normalize_text(text)
+        if not content:
+            return {"success": True, "stored_ids": [], "skipped_ids": [], "reason": "empty_text"}
+
+        normalized_role = str(role or "user").strip().lower() or "user"
+        person_ids = []
+        if normalized_role == "user" and user_id:
+            person_ids.append(f"{platform}:{user_id}" if platform else user_id)
+        participants = [sender_name] if normalized_role == "user" and sender_name else []
+        source_type = "chat_message"
+        external_id = str(message_id or "").strip()
+        if not external_id:
+            external_id = compute_hash(f"{source_type}:{session_id}:{role}:{timestamp}:{content}")
+
+        memory_source = str(source or "").strip() or self._build_source(source_type, session_id, person_ids)
+        metadata = {
+            "external_id": external_id,
+            "source_type": source_type,
+            "chat_id": str(session_id or "").strip(),
+            "person_ids": person_ids,
+            "participants": participants,
+            "role": normalized_role,
+            "role_origin": str(role_origin or role or "").strip(),
+            "sender_id": str(user_id or "").strip(),
+            "sender_name": str(sender_name or "").strip(),
+            "group_id": str(group_id or "").strip(),
+            "platform": str(platform or "").strip(),
+            "unified_msg_origin": str(unified_msg_origin or "").strip(),
+            "message_id": str(message_id or "").strip(),
+            "transcript_source": source,
+        }
+        metadata = {
+            key: value
+            for key, value in metadata.items()
+            if value is not None and value != "" and value != []
+        }
+
+        paragraph_hash = ctx.metadata_store.add_paragraph(
+            content=content,
+            source=memory_source,
+            metadata=metadata,
+            knowledge_type=detect_knowledge_type(content).value,
+            time_meta=time_meta or ({"event_time": timestamp} if timestamp else None),
+        )
+
+        warnings: list[str] = []
+        vector_written = False
+        if paragraph_hash in ctx.vector_store:
+            vector_written = True
+        else:
+            try:
+                embedding = await ctx.embedding_manager.encode(content)
+                if getattr(embedding, "ndim", 1) == 1:
+                    embedding = embedding.reshape(1, -1)
+                ctx.vector_store.add(vectors=embedding, ids=[paragraph_hash])
+                vector_written = True
+            except Exception as exc:
+                warnings.append(f"vector_write_failed: {exc}")
+
+        entities = [item for item in [*person_ids, *participants] if str(item or "").strip()]
+        for name in dict.fromkeys(entities):
+            ctx.metadata_store.add_entity(
+                name=str(name),
+                source_paragraph=paragraph_hash,
+                metadata={"source": "astrbot_event", "chat_id": session_id},
+            )
+
+        ctx.metadata_store.enqueue_episode_pending(paragraph_hash, source=memory_source)
+        try:
+            ctx.vector_store.save()
+            ctx.graph_store.save()
+            sparse_index = getattr(ctx, "sparse_index", None)
+            if sparse_index is not None and getattr(sparse_index.config, "enabled", False):
+                sparse_index.ensure_loaded()
+        except Exception as exc:
+            warnings.append(f"persist_failed: {exc}")
+
+        return {
+            "success": True,
+            "stored_ids": [paragraph_hash],
+            "skipped_ids": [],
+            "source": memory_source,
+            "vector_written": vector_written,
+            "warnings": warnings,
+        }
 
     async def ingest_message(
         self,
@@ -38,8 +174,6 @@ class IngestService:
         ctx = runtime.context
         session = str(session_id or "").strip() or f"scope:{scope_key}"
 
-        # 仅将原始消息存入 transcript（聊天记录表），不做向量化。
-        # 向量库和知识图谱仅由 LLM 总结提炼后写入，避免低质量碎片污染检索空间。
         ctx.metadata_store.upsert_transcript_session(
             session_id=session,
             source=source,
@@ -73,4 +207,31 @@ class IngestService:
             messages=[msg_record],
         )
 
-        return {"success": True, "skipped": False, "result": {"mode": "transcript_only"}}
+        direct_result: Optional[Dict[str, Any]] = None
+        if self._direct_enabled(role):
+            direct_result = await self._write_direct_memory(
+                ctx=ctx,
+                session_id=session,
+                role=role,
+                text=text,
+                source=source,
+                user_id=user_id,
+                group_id=group_id,
+                platform=platform,
+                unified_msg_origin=unified_msg_origin,
+                sender_name=sender_name,
+                message_id=message_id,
+                role_origin=role_origin,
+                timestamp=float(timestamp) if timestamp else time.time(),
+                time_meta=time_meta,
+            )
+
+        return {
+            "success": True,
+            "skipped": False,
+            "result": {
+                "mode": "direct" if direct_result is not None else "transcript_only",
+                "transcript": {"session_id": session, "stored": True},
+                "direct": direct_result,
+            },
+        }

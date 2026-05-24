@@ -758,6 +758,67 @@ class MemorixPlugin(Star):
             logger.error("[memorix] mem time failed: %s", exc, exc_info=True)
             yield event.plain_result(f"时序查询失败: {exc}")
 
+    @mem.command("episode")
+    async def mem_episode(
+        self,
+        event: AstrMessageEvent,
+        query: str = "",
+        top_k: int = 10,
+    ):
+        """按 Episode 查询记忆片段。"""
+        q = str(query or "").strip()
+        resolved_top_k = self._to_int(top_k, 10)
+        tokens = self._parse_tail_tokens(event.message_str, "episode")
+        if tokens:
+            maybe_k = self._to_int(tokens[-1], -1, min_value=1)
+            if len(tokens) > 1 and maybe_k > 0:
+                resolved_top_k = maybe_k
+                tokens = tokens[:-1]
+            parsed_query = " ".join(tokens).strip()
+            if parsed_query:
+                q = parsed_query
+
+        self._log_cmd(event, "episode", top_k=resolved_top_k, q_len=len(q))
+        scope_key = self._resolve_scope(event)
+        try:
+            data = await self.query_service.episode(scope_key=scope_key, query=q, top_k=resolved_top_k)
+            yield event.plain_result(to_pretty_text(data))
+        except Exception as exc:
+            logger.error("[memorix] mem episode failed: %s", exc, exc_info=True)
+            yield event.plain_result(f"Episode 查询失败: {exc}")
+
+    @mem.command("aggregate")
+    async def mem_aggregate(
+        self,
+        event: AstrMessageEvent,
+        query: str = "",
+        top_k: int = 10,
+    ):
+        """聚合查询 search/time/episode 召回结果。"""
+        q = str(query or "").strip()
+        resolved_top_k = self._to_int(top_k, 10)
+        tokens = self._parse_tail_tokens(event.message_str, "aggregate")
+        if tokens:
+            maybe_k = self._to_int(tokens[-1], -1, min_value=1)
+            if len(tokens) > 1 and maybe_k > 0:
+                resolved_top_k = maybe_k
+                tokens = tokens[:-1]
+            parsed_query = " ".join(tokens).strip()
+            if parsed_query:
+                q = parsed_query
+        if not q:
+            yield event.plain_result("用法: /mem aggregate <关键词> [top_k]")
+            return
+
+        self._log_cmd(event, "aggregate", top_k=resolved_top_k, q_len=len(q))
+        scope_key = self._resolve_scope(event)
+        try:
+            data = await self.query_service.aggregate(scope_key=scope_key, query=q, top_k=resolved_top_k)
+            yield event.plain_result(to_pretty_text(data))
+        except Exception as exc:
+            logger.error("[memorix] mem aggregate failed: %s", exc, exc_info=True)
+            yield event.plain_result(f"聚合查询失败: {exc}")
+
     @mem.command("protect")
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def mem_protect(self, event: AstrMessageEvent, query_or_hash: str = "", hours: float = 24.0):

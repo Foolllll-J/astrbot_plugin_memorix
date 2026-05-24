@@ -41,6 +41,24 @@
         "hint": "开启后，以命令前缀（如 /、! 等）开头的消息不会被写入记忆，避免将指令本身作为记忆内容。",
         "default": true
       },
+      "memory_write_mode": {
+        "type": "string",
+        "description": "消息记忆写入模式",
+        "hint": "direct：与 MaiBot 版一致，原始聊天会同时写入段落、向量和 Episode 队列，并保留 transcript；transcript_only：仅记录聊天流水，依赖总结入库；both 等同 direct，保留用于兼容显式双写语义。",
+        "default": "direct",
+        "options": [
+          "direct",
+          "transcript_only",
+          "both"
+        ],
+        "obvious_hint": true
+      },
+      "direct_write_assistant": {
+        "type": "bool",
+        "description": "直接写入机器人回复",
+        "hint": "开启后，LLM 回复也会像 MaiBot ingest_text 一样进入长期记忆。关闭后只直接写入用户消息，机器人回复仍进入 transcript。",
+        "default": true
+      },
       "command_prefixes": {
         "type": "list",
         "description": "命令前缀列表",

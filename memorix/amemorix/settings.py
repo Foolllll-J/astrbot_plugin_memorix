@@ -181,6 +181,14 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "segmentation_max_tokens": 1500,
     },
     "filter": {"enabled": True, "mode": "whitelist", "chats": []},
+    "ingest": {
+        "record_all_events": True,
+        "skip_empty_text": True,
+        "skip_command_messages": True,
+        "command_prefixes": ["/"],
+        "memory_write_mode": "direct",
+        "direct_write_assistant": True,
+    },
     "routing": {
         "search_owner": "action",
         "tool_search_mode": "forward",

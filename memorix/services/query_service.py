@@ -91,6 +91,54 @@ class QueryService:
             enforce_chat_filter=enforce_chat_filter,
         )
 
+    async def episode(
+        self,
+        *,
+        scope_key: str,
+        query: str = "",
+        time_from: Optional[str] = None,
+        time_to: Optional[str] = None,
+        person: Optional[str] = None,
+        source: Optional[str] = None,
+        top_k: Optional[int] = None,
+        include_paragraphs: bool = False,
+    ) -> Dict[str, Any]:
+        runtime = await self.runtime_manager.get_runtime(scope_key)
+        return await BaseQueryService(runtime.context).episode(
+            query=query,
+            time_from=time_from,
+            time_to=time_to,
+            person=person,
+            source=source,
+            top_k=top_k,
+            include_paragraphs=include_paragraphs,
+        )
+
+    async def aggregate(
+        self,
+        *,
+        scope_key: str,
+        query: str = "",
+        time_from: Optional[str] = None,
+        time_to: Optional[str] = None,
+        person: Optional[str] = None,
+        source: Optional[str] = None,
+        top_k: Optional[int] = None,
+        mix: bool = True,
+        mix_top_k: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        runtime = await self.runtime_manager.get_runtime(scope_key)
+        return await BaseQueryService(runtime.context).aggregate(
+            query=query,
+            time_from=time_from,
+            time_to=time_to,
+            person=person,
+            source=source,
+            top_k=top_k,
+            mix=mix,
+            mix_top_k=mix_top_k,
+        )
+
     async def stats(self, *, scope_key: str) -> Dict[str, Any]:
         runtime = await self.runtime_manager.get_runtime(scope_key)
         return await BaseQueryService(runtime.context).stats()

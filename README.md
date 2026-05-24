@@ -82,10 +82,10 @@
 ① 作用域路由 ── 按 scope.mode 确定记忆归属
   │
   ▼
-② 原始消息写入 ── 仅进入 transcript，避免碎片消息直接污染向量库/图谱
+② 原始消息写入 ── 默认采用 MaiBot 风格 direct 写入：同时进入 transcript、段落向量、实体索引与 Episode 队列；可切回 transcript_only
   │
   ▼
-③ 总结提炼 ── 自动/手动总结会话，生成段落、关系、Episode 并写入索引
+③ 总结提炼 ── 保留 AstrBot 侧自动/手动总结能力，继续生成高质量段落、关系、Episode 并写入索引
   │
   ▼
 ④ 检索注入 ── LLM 请求时按 scope/source 混合检索记忆，注入当前用户消息上下文
@@ -131,6 +131,8 @@ https://github.com/exynos967/astrbot_plugin_memorix
 | `/mem status` | 查看作用域、WebUI、调度器状态 |
 | `/mem query <关键词> [top_k]` | 混合语义检索 |
 | `/mem time <起始时间> [结束时间] [关键词]` | 时序检索 |
+| `/mem episode [关键词] [top_k]` | Episode 检索 |
+| `/mem aggregate <关键词> [top_k]` | 聚合 search/time/episode 召回 |
 | `/mem profile [人物关键词] [top_k]` | 查询人物画像 |
 | `/mem summary_now [上下文长度]` | 立即生成会话总结并写入记忆 |
 | `/mem ui` | 获取 WebUI 访问地址 |
@@ -192,6 +194,8 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | `ingest.record_all_events` | bool | `true` | 是否记录所有消息事件 |
 | `ingest.skip_empty_text` | bool | `true` | 忽略空文本消息 |
 | `ingest.skip_command_messages` | bool | `true` | 忽略命令消息（按 `command_prefixes` 判断） |
+| `ingest.memory_write_mode` | string | `direct` | 写入模式：`direct`/`both` 为 MaiBot 风格直接写入长期记忆并保留 transcript；`transcript_only` 为旧的仅流水模式 |
+| `ingest.direct_write_assistant` | bool | `true` | 是否将机器人回复也直接写入长期记忆 |
 | `ingest.command_prefixes` | list | `["/"]` | 命令前缀列表（支持自定义前缀，如 `["/", "!", "."]`） |
 
 ### 提供商（provider）
@@ -223,6 +227,7 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | `retrieval.enable_parallel` | bool | `true` | 并行检索 |
 | `retrieval.temporal.enabled` | bool | `true` | 启用时序检索 |
 | `retrieval.temporal.default_top_k` | int | `10` | 时序检索默认 top_k |
+| `retrieval.aggregate.rrf_k` | int | `60` | 聚合检索 RRF 融合 K 值 |
 
 ### 记忆维护（memory）
 
