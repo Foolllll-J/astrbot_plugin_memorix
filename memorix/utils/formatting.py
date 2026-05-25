@@ -1,4 +1,4 @@
-"""Utilities for command output formatting."""
+"""Small formatting helpers for Memorix tool outputs."""
 
 from __future__ import annotations
 
@@ -11,4 +11,3 @@ def to_pretty_text(payload: Any) -> str:
         return json.dumps(payload, ensure_ascii=False, indent=2)
     except Exception:
         return str(payload)
-

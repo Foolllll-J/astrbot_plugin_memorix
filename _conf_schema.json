@@ -128,18 +128,18 @@
       "temporal": {
         "type": "object",
         "description": "时序检索 —— 按时间范围查询记忆",
-        "hint": "时序检索允许用户通过 /mem time 命令按时间范围查询记忆，支持自然语言时间表达。",
+        "hint": "时序检索允许工具和 WebUI 按时间范围查询记忆，支持自然语言时间表达。",
         "items": {
           "enabled": {
             "type": "bool",
             "description": "启用时序检索功能",
-            "hint": "关闭后 /mem time 命令将不可用。",
+            "hint": "关闭后时序检索工具和 WebUI 时序查询将不可用。",
             "default": true
           },
           "default_top_k": {
             "type": "int",
             "description": "时序检索默认返回条数",
-            "hint": "通过 /mem time 命令查询时，未指定数量时默认返回的记忆条数。建议范围 5~30。",
+            "hint": "执行时序检索时，未指定数量时默认返回的记忆条数。建议范围 5~30。",
             "default": 10
           }
         }
@@ -292,13 +292,13 @@
       "auto_protect_ttl_hours": {
         "type": "float",
         "description": "强化自动保护时长（小时）",
-        "hint": "通过 /mem reinforce 强化记忆后，该记忆在此时长内不会被衰减或剪枝。建议范围 6~168 小时。",
+        "hint": "通过 WebUI 或 maintain_memory 工具强化记忆后，该记忆在此时长内不会被衰减或剪枝。建议范围 6~168 小时。",
         "default": 24.0
       },
       "orphan": {
         "type": "object",
         "description": "孤儿节点回收 —— 管理失去所有关联关系的实体和段落",
-        "hint": "当一个实体或段落的所有关联关系都被剪枝后，它就成为「孤儿节点」。这些节点会经过保留期和宽限期后被物理清理，支持在宽限期内通过 /mem restore 恢复。",
+        "hint": "当一个实体或段落的所有关联关系都被剪枝后，它就成为「孤儿节点」。这些节点会经过保留期和宽限期后被物理清理，支持在宽限期内通过 WebUI 或 maintain_memory 工具恢复。",
         "items": {
           "enable_soft_delete": {
             "type": "bool",
@@ -321,7 +321,7 @@
           "sweep_grace_hours": {
             "type": "float",
             "description": "软删除宽限期（小时）",
-            "hint": "软删除标记后，等待多少小时才真正物理清理。在此期间可通过 /mem restore 命令恢复。建议范围 12~72 小时。",
+            "hint": "软删除标记后，等待多少小时才真正物理清理。在此期间可通过 WebUI 或 maintain_memory 工具恢复。建议范围 12~72 小时。",
             "default": 24.0
           }
         }
@@ -342,13 +342,13 @@
       "opt_in_required": {
         "type": "bool",
         "description": "需要用户主动开启画像注入",
-        "hint": "开启后，每个用户需要在对应会话中发送 /person_profile on 才会对其注入画像信息。这是一种隐私保护机制，让用户自主选择是否被「记住」。关闭则按 default_injection_enabled 的值决定默认行为。",
+        "hint": "开启后，只有已授权的会话用户才会注入画像信息。这是一种隐私保护机制；关闭则按 default_injection_enabled 的值决定默认行为。",
         "default": false
       },
       "default_injection_enabled": {
         "type": "bool",
         "description": "未手动设置时的默认画像注入状态",
-        "hint": "当用户未通过 /person_profile 命令手动设置开关时，是否默认开启画像注入。opt_in_required=true 时作为“未设置用户”的默认值；opt_in_required=false 时作为全局默认行为。",
+        "hint": "当用户未单独设置画像注入开关时，是否默认开启画像注入。opt_in_required=true 时作为“未设置用户”的默认值；opt_in_required=false 时作为全局默认行为。",
         "default": false
       },
       "global_injection_enabled": {
@@ -379,7 +379,7 @@
       "enabled": {
         "type": "bool",
         "description": "启用定时自动总结",
-        "hint": "开启后，插件会在下方设定的时间点自动执行总结任务。关闭后需手动通过 /mem summary_now 或 /mem summary_all 触发总结。",
+        "hint": "开启后，插件会在下方设定的时间点自动执行总结任务。关闭后可在内嵌 WebUI 的导入/总结相关页面手动触发。",
         "default": true
       },
       "import_times": {

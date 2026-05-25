@@ -14,7 +14,7 @@ from pydantic import Field
 from pydantic.dataclasses import dataclass
 
 from .adapters.astrbot_event_adapter import AstrbotEventAdapter
-from .commands.mem_commands import to_pretty_text
+from .utils.formatting import to_pretty_text
 
 
 def _tool_result(payload: Any) -> str:

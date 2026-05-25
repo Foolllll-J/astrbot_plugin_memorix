@@ -122,32 +122,13 @@ https://github.com/exynos967/astrbot_plugin_memorix
 | `embedding.openapi.api_key` | 你的 API Key | 远程鉴权 |
 | `embedding.openapi.model` | 你的 Embedding 模型名 | 如 `text-embedding-3-large` |
 
-## 命令参考
+## 使用方式
 
-### 通用命令
+本插件不再注册聊天命令，避免和 MaiBot 版工具调用路径产生双入口差异。
 
-| 命令 | 说明 |
-|---|---|
-| `/mem status` | 查看作用域、内嵌 WebUI、调度器状态 |
-| `/mem query <关键词> [top_k]` | 混合语义检索 |
-| `/mem time <起始时间> [结束时间] [关键词]` | 时序检索 |
-| `/mem episode [关键词] [top_k]` | Episode 检索 |
-| `/mem aggregate <关键词> [top_k]` | 聚合 search/time/episode 召回 |
-| `/mem profile [人物关键词] [top_k]` | 查询人物画像 |
-| `/mem summary_now [上下文长度]` | 立即生成会话总结并写入记忆 |
-| `/person_profile on\|off\|status` | 控制当前会话+用户的人物画像注入开关 |
-
-### 管理员命令
-
-| 命令 | 说明 |
-|---|---|
-| `/mem summary_all [上下文长度] [最大会话数]` | 对当前作用域内所有已记录会话执行批量总结导入 |
-| `/mem protect <hash或关键词> [小时数]` | 保护记忆不被衰减（不填时长则永久保护） |
-| `/mem reinforce <hash或关键词>` | 强化记忆热度，自动保护 24h |
-| `/mem restore <hash> [relation\|entity]` | 从回收站恢复已删除的记忆 |
-| `/mem delete_entity <实体名>` | 删除实体（级联删除相关关系与段落关联） |
-| `/mem profile_override <人物ID> <文本>` | 手动覆盖人物画像 |
-| `/mem profile_clear <人物ID>` | 清除画像覆盖，恢复自动生成 |
+- **日常记忆写入/召回**：由 LLM 工具自动调用 `search_memory`、`ingest_summary`、`ingest_text`、`get_person_profile`、`maintain_memory`、`memory_stats` 完成。
+- **图谱、检索、导入、总结、回收站、画像覆盖等管理操作**：在 AstrBot Dashboard 的插件详情页打开 `Memorix 控制台`。
+- **作用域、检索、生命周期、人物画像、定时总结等策略**：在 AstrBot 插件配置页修改 `_conf_schema.json` 暴露的配置项。
 
 ## 作用域模式
 
@@ -333,7 +314,7 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 <details>
 <summary>如何清理旧记忆？</summary>
 
-记忆系统自带生命周期管理：衰减 → 冻结 → 剪枝自动进行。也可通过 WebUI 手动管理，或使用 `/mem protect` 保护重要记忆不被清理。
+记忆系统自带生命周期管理：衰减 → 冻结 → 剪枝自动进行。也可通过内嵌 WebUI 手动管理，或由 LLM 在用户明确要求管理记忆时调用 `maintain_memory` 保护重要记忆。
 
 </details>
 
@@ -346,7 +327,7 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 
 建议在你要查看的那个群或私聊里按顺序执行：
 
-1. 发送一条消息或执行 `/mem status`，确认当前返回的 `scope`
+1. 先在目标群或私聊里发送一条普通消息，让插件记录并刷新当前作用域
 2. 在 AstrBot Dashboard 插件详情页打开 `Memorix 控制台`
 3. 如需固定查看范围，在插件配置里设置 `webui.scope`
 
