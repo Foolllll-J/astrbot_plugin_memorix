@@ -235,3 +235,176 @@ class IngestService:
                 "direct": direct_result,
             },
         }
+
+    @staticmethod
+    def _as_list(raw: Any) -> list[str]:
+        if raw is None:
+            return []
+        if isinstance(raw, str):
+            values = [raw]
+        elif isinstance(raw, (list, tuple, set)):
+            values = list(raw)
+        else:
+            values = []
+        return [str(item).strip() for item in values if str(item or "").strip()]
+
+    async def ingest_text(
+        self,
+        *,
+        scope_key: str,
+        external_id: str,
+        source_type: str,
+        text: str,
+        chat_id: str = "",
+        person_ids: Optional[list[str]] = None,
+        participants: Optional[list[str]] = None,
+        timestamp: Optional[float] = None,
+        time_start: Any = None,
+        time_end: Any = None,
+        tags: Optional[list[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        entities: Optional[list[str]] = None,
+        relations: Optional[list[Dict[str, Any]]] = None,
+        respect_filter: bool = True,
+        user_id: str = "",
+        group_id: str = "",
+    ) -> Dict[str, Any]:
+        content = normalize_text(text)
+        source_kind = str(source_type or "tool_text").strip() or "tool_text"
+        stream_id = str(chat_id or "").strip()
+        external_token = str(external_id or "").strip() or compute_hash(f"{source_kind}:{stream_id}:{content}")
+        if not content:
+            return {"success": True, "stored_ids": [], "skipped_ids": [external_token], "reason": "empty_text"}
+
+        runtime = await self.runtime_manager.get_runtime(scope_key)
+        ctx = runtime.context
+        if respect_filter and hasattr(ctx, "is_chat_enabled") and not ctx.is_chat_enabled(stream_id, group_id, user_id):
+            return {"success": True, "stored_ids": [], "skipped_ids": [external_token], "detail": "chat_filtered"}
+
+        person_tokens = self._as_list(person_ids)
+        participant_tokens = self._as_list(participants)
+        tag_tokens = self._as_list(tags)
+        entity_tokens = list(dict.fromkeys([*self._as_list(entities), *person_tokens, *participant_tokens]))
+        source = self._build_source(source_kind, stream_id, person_tokens)
+        paragraph_meta = dict(metadata or {})
+        paragraph_meta.update(
+            {
+                "external_id": external_token,
+                "source_type": source_kind,
+                "chat_id": stream_id,
+                "person_ids": person_tokens,
+                "participants": participant_tokens,
+                "tags": tag_tokens,
+            }
+        )
+        paragraph_meta = {key: value for key, value in paragraph_meta.items() if value not in (None, "", [])}
+        time_meta: Dict[str, Any] = {}
+        if timestamp is not None:
+            time_meta["event_time"] = timestamp
+        if time_start is not None:
+            time_meta["event_time_start"] = time_start
+        if time_end is not None:
+            time_meta["event_time_end"] = time_end
+
+        paragraph_hash = ctx.metadata_store.add_paragraph(
+            content=content,
+            source=source,
+            metadata=paragraph_meta,
+            knowledge_type=detect_knowledge_type(content).value,
+            time_meta=time_meta or None,
+        )
+
+        warnings: list[str] = []
+        vector_written = False
+        if paragraph_hash in ctx.vector_store:
+            vector_written = True
+        else:
+            try:
+                embedding = await ctx.embedding_manager.encode(content)
+                if getattr(embedding, "ndim", 1) == 1:
+                    embedding = embedding.reshape(1, -1)
+                ctx.vector_store.add(vectors=embedding, ids=[paragraph_hash])
+                vector_written = True
+            except Exception as exc:
+                warnings.append(f"vector_write_failed: {exc}")
+
+        for name in entity_tokens:
+            ctx.metadata_store.add_entity(name=name, source_paragraph=paragraph_hash)
+
+        relation_hashes: list[str] = []
+        write_relation_vectors = bool(ctx.get_config("retrieval.relation_vectorization.enabled", True))
+        relation_service = getattr(ctx, "relation_write_service", None)
+        if relation_service is not None:
+            for row in [dict(item) for item in (relations or []) if isinstance(item, dict)]:
+                subject = str(row.get("subject", "") or "").strip()
+                predicate = str(row.get("predicate", "") or "").strip()
+                obj = str(row.get("object", "") or row.get("obj", "") or "").strip()
+                if not (subject and predicate and obj):
+                    continue
+                try:
+                    result = await relation_service.upsert_relation_with_vector(
+                        subject=subject,
+                        predicate=predicate,
+                        obj=obj,
+                        confidence=float(row.get("confidence", 1.0) or 1.0),
+                        source_paragraph=paragraph_hash,
+                        metadata=row.get("metadata") if isinstance(row.get("metadata"), dict) else paragraph_meta,
+                        write_vector=write_relation_vectors,
+                    )
+                    ctx.metadata_store.link_paragraph_relation(paragraph_hash, result.hash_value)
+                    relation_hashes.append(result.hash_value)
+                except Exception as exc:
+                    warnings.append(f"relation_write_failed: {exc}")
+
+        ctx.metadata_store.enqueue_episode_pending(paragraph_hash, source=source)
+        try:
+            ctx.vector_store.save()
+            ctx.graph_store.save()
+            sparse_index = getattr(ctx, "sparse_index", None)
+            if sparse_index is not None and getattr(sparse_index.config, "enabled", False):
+                sparse_index.ensure_loaded()
+        except Exception as exc:
+            warnings.append(f"persist_failed: {exc}")
+
+        return {
+            "success": True,
+            "stored_ids": [paragraph_hash, *relation_hashes],
+            "skipped_ids": [],
+            "source": source,
+            "vector_written": vector_written,
+            "warnings": warnings,
+        }
+
+    async def ingest_summary(
+        self,
+        *,
+        scope_key: str,
+        external_id: str,
+        chat_id: str,
+        text: str,
+        participants: Optional[list[str]] = None,
+        time_start: Any = None,
+        time_end: Any = None,
+        tags: Optional[list[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        respect_filter: bool = True,
+        user_id: str = "",
+        group_id: str = "",
+    ) -> Dict[str, Any]:
+        summary_meta = dict(metadata or {})
+        summary_meta.setdefault("kind", "chat_summary")
+        return await self.ingest_text(
+            scope_key=scope_key,
+            external_id=external_id,
+            source_type="chat_summary",
+            text=text,
+            chat_id=chat_id,
+            participants=participants,
+            time_start=time_start,
+            time_end=time_end,
+            tags=tags,
+            metadata=summary_meta,
+            respect_filter=respect_filter,
+            user_id=user_id,
+            group_id=group_id,
+        )

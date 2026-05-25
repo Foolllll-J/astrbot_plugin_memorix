@@ -28,3 +28,6 @@ class MemoryService:
         runtime = await self.runtime_manager.get_runtime(scope_key)
         return await BaseMemoryService(runtime.context).restore(hash_value=hash_value, restore_type=restore_type)
 
+    async def freeze(self, *, scope_key: str, query_or_hash: str) -> Dict[str, Any]:
+        runtime = await self.runtime_manager.get_runtime(scope_key)
+        return await BaseMemoryService(runtime.context).freeze(query_or_hash=query_or_hash)
