@@ -10,8 +10,9 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 
+import httpx
 import numpy as np
 from openai import AsyncOpenAI
 
@@ -26,6 +27,61 @@ def _first_env(*keys: str) -> str:
         if value:
             return value
     return ""
+
+
+def _normalize_openai_base_url(raw: str) -> str:
+    """Normalize OpenAI-compatible base URL.
+
+    AstrBot plugin config documents that users may omit the trailing `/v1`.
+    The OpenAI SDK does not add it automatically; without this normalization
+    many compatible gateways return a plain string/error for `/embeddings`,
+    which later surfaces as `AttributeError: 'str' object has no attribute data`.
+    """
+    text = str(raw or "").strip().rstrip("/")
+    if not text:
+        return ""
+    if text.endswith("/v1"):
+        return text
+    return f"{text}/v1"
+
+
+def _coerce_embedding_rows(payload: Any) -> List[List[float]]:
+    """Parse OpenAI and common OpenAI-compatible embedding response shapes."""
+    if isinstance(payload, str):
+        raise ValueError(f"embedding endpoint returned plain text: {payload[:200]}")
+
+    data = payload
+    if hasattr(payload, "model_dump"):
+        data = payload.model_dump()
+    elif hasattr(payload, "dict"):
+        data = payload.dict()
+
+    if isinstance(data, dict):
+        if "data" in data:
+            data = data["data"]
+        elif "embeddings" in data:
+            data = data["embeddings"]
+        elif "embedding" in data:
+            data = [data["embedding"]]
+
+    rows: List[List[float]] = []
+    if isinstance(data, list):
+        for item in data:
+            if hasattr(item, "model_dump"):
+                item = item.model_dump()
+            elif hasattr(item, "dict"):
+                item = item.dict()
+            if hasattr(item, "embedding"):
+                item = getattr(item, "embedding")
+            elif isinstance(item, dict) and "embedding" in item:
+                item = item["embedding"]
+            if not isinstance(item, list):
+                raise ValueError(f"invalid embedding item type: {type(item).__name__}")
+            rows.append([float(value) for value in item])
+
+    if not rows:
+        raise ValueError("embedding endpoint returned no embedding rows")
+    return rows
 
 
 class EmbeddingAPIAdapter:
@@ -51,7 +107,7 @@ class EmbeddingAPIAdapter:
         self.timeout_seconds = float(timeout_seconds or 30.0)
         self.max_retries = max(1, int(max_retries))
 
-        self.base_url = str(base_url or _first_env("OPENAPI_BASE_URL", "OPENAI_BASE_URL")).strip()
+        self.base_url = _normalize_openai_base_url(base_url or _first_env("OPENAPI_BASE_URL", "OPENAI_BASE_URL"))
         self.api_key = str(api_key or _first_env("OPENAPI_API_KEY", "OPENAI_API_KEY")).strip()
         if openai_model:
             self.openai_model = str(openai_model).strip()
@@ -69,9 +125,13 @@ class EmbeddingAPIAdapter:
             ).strip()
 
         self.retry_config = retry_config or {}
-        self.max_attempts = max(1, int(self.retry_config.get("max_attempts", self.max_retries)))
-        self.max_wait_seconds = max(0.1, float(self.retry_config.get("max_wait_seconds", 30)))
-        self.min_wait_seconds = max(0.1, float(self.retry_config.get("min_wait_seconds", 1)))
+        # `embedding.openapi.max_retries` is exposed in AstrBot UI; cap the
+        # hidden A_memorix retry policy with it so one bad embedding gateway
+        # cannot occupy the whole 60s AstrBot tool budget.
+        configured_attempts = int(self.retry_config.get("max_attempts", self.max_retries))
+        self.max_attempts = max(1, min(configured_attempts, self.max_retries))
+        self.max_wait_seconds = max(0.1, min(5.0, float(self.retry_config.get("max_wait_seconds", 30))))
+        self.min_wait_seconds = max(0.1, min(self.max_wait_seconds, float(self.retry_config.get("min_wait_seconds", 1))))
 
         self._dimension: Optional[int] = None
         self._dimension_detected = False
@@ -114,26 +174,51 @@ class EmbeddingAPIAdapter:
         for attempt in range(1, self.max_attempts + 1):
             try:
                 resp = await client.embeddings.create(**payload)
-                return [list(item.embedding) for item in resp.data]
+                return _coerce_embedding_rows(resp)
+            except AttributeError as exc:
+                try:
+                    return await self._request_embeddings_raw(payload)
+                except Exception as raw_exc:
+                    last_error = raw_exc
+                    logger.debug("OpenAI SDK embedding parse failed before raw fallback: %s", exc)
             except Exception as exc:
                 last_error = exc
-                if attempt >= self.max_attempts:
-                    break
-                wait_s = min(
-                    self.max_wait_seconds,
-                    self.min_wait_seconds * (2 ** (attempt - 1)),
-                )
-                logger.warning(
-                    "Embedding request failed (attempt %s/%s), retry in %.1fs: %s",
-                    attempt,
-                    self.max_attempts,
-                    wait_s,
-                    exc,
-                )
-                await asyncio.sleep(wait_s)
+
+            if attempt >= self.max_attempts:
+                break
+            wait_s = min(
+                self.max_wait_seconds,
+                self.min_wait_seconds * (2 ** (attempt - 1)),
+            )
+            logger.warning(
+                "Embedding request failed (attempt %s/%s), retry in %.1fs: %s",
+                attempt,
+                self.max_attempts,
+                wait_s,
+                last_error,
+            )
+            await asyncio.sleep(wait_s)
 
         assert last_error is not None
         raise last_error
+
+    async def _request_embeddings_raw(self, payload: dict) -> List[List[float]]:
+        if not self.base_url:
+            raise ValueError("raw embedding request requires base_url")
+
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        url = f"{self.base_url.rstrip('/')}/embeddings"
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+            resp.raise_for_status()
+            try:
+                data: Any = resp.json()
+            except ValueError as exc:
+                raise ValueError(f"embedding endpoint returned non-json body: {resp.text[:200]}") from exc
+        return _coerce_embedding_rows(data)
 
     async def _detect_dimension(self) -> int:
         if self._dimension_detected and self._dimension is not None:
@@ -162,6 +247,13 @@ class EmbeddingAPIAdapter:
         self._dimension = self.default_dimension
         self._dimension_detected = True
         return self.default_dimension
+
+    def set_embedding_dimension(self, dimension: int, *, detected: bool = True) -> None:
+        """Pin effective embedding dimension to the current vector store."""
+        safe_dimension = max(1, int(dimension))
+        self._dimension = safe_dimension
+        self._dimension_detected = bool(detected)
+        self.default_dimension = safe_dimension
 
     async def encode(
         self,

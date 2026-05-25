@@ -104,7 +104,8 @@ def build_context(settings: AppSettings) -> AppContext:
 
     metadata_path = vectors_dir / "vectors_metadata.pkl"
     vector_dim = configured_dim
-    auto_detect = bool(settings.get("embedding.auto_detect_dimension", True))
+    embedding_enabled = bool(settings.get("embedding.enabled", False))
+    auto_detect = embedding_enabled and bool(settings.get("embedding.auto_detect_dimension", True))
     if auto_detect and not metadata_path.exists():
         probed_dim = _probe_embedding_dimension(adapter, configured_dim)
         if probed_dim != configured_dim:
@@ -114,6 +115,8 @@ def build_context(settings: AppSettings) -> AppContext:
                 probed_dim,
             )
         vector_dim = probed_dim
+    if hasattr(adapter, "set_embedding_dimension"):
+        adapter.set_embedding_dimension(vector_dim)
 
     quantization_map = {
         "float32": QuantizationType.FLOAT32,
