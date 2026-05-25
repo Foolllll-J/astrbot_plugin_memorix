@@ -339,24 +339,6 @@
         "hint": "关闭后将不会生成和注入人物画像信息。如果你不需要机器人记住用户的个人特征，可以关闭以节省 LLM 调用开销。",
         "default": true
       },
-      "opt_in_required": {
-        "type": "bool",
-        "description": "需要用户主动开启画像注入",
-        "hint": "开启后，只有已授权的会话用户才会注入画像信息。这是一种隐私保护机制；关闭则按 default_injection_enabled 的值决定默认行为。",
-        "default": false
-      },
-      "default_injection_enabled": {
-        "type": "bool",
-        "description": "未手动设置时的默认画像注入状态",
-        "hint": "当用户未单独设置画像注入开关时，是否默认开启画像注入。opt_in_required=true 时作为“未设置用户”的默认值；opt_in_required=false 时作为全局默认行为。",
-        "default": false
-      },
-      "global_injection_enabled": {
-        "type": "bool",
-        "description": "启用全局人物画像注入",
-        "hint": "开启后将对所有会话强制注入人物画像（仍受 person_profile.enabled 总开关约束），不再要求用户在会话内手动开启。关闭后回退到 opt_in_required/default_injection_enabled 的常规策略。",
-        "default": false
-      },
       "profile_ttl_minutes": {
         "type": "int",
         "description": "画像缓存有效期（分钟）",
@@ -368,27 +350,6 @@
         "description": "画像生成时参考的证据条数",
         "hint": "生成人物画像时，从记忆库中检索多少条相关记忆作为 LLM 的参考证据。数量越多画像越全面，但也消耗更多 Token。建议范围 5~20。",
         "default": 12
-      }
-    }
-  },
-  "schedule": {
-    "type": "object",
-    "description": "定时总结 —— 自动在每天指定时间对所有会话执行记忆总结",
-    "hint": "定时总结会在指定时间点自动触发，对当前作用域内所有有新消息的会话生成摘要并写入记忆系统。适合在低峰期执行，避免影响正常对话响应速度。",
-    "items": {
-      "enabled": {
-        "type": "bool",
-        "description": "启用定时自动总结",
-        "hint": "开启后，插件会在下方设定的时间点自动执行总结任务。关闭后可在内嵌 WebUI 的导入/总结相关页面手动触发。",
-        "default": true
-      },
-      "import_times": {
-        "type": "list",
-        "description": "每日总结触发时间",
-        "hint": "设定每天自动执行总结的时间点，格式为 HH:MM（24 小时制）。支持多个时间点，例如 [\"04:00\", \"16:00\"]。",
-        "default": [
-          "04:00"
-        ]
       }
     }
   },
@@ -413,18 +374,6 @@
           "astrbot",
           "hybrid"
         ]
-      },
-      "chat_provider_id": {
-        "type": "string",
-        "description": "总结专用聊天 Provider ID",
-        "hint": "仅在启用 AstrBot 原生 Provider Bridge 时生效。填写后，总结任务会优先使用这里指定的 Provider，而不会影响日常聊天所用的模型。",
-        "default": ""
-      },
-      "model_name": {
-        "type": "string",
-        "description": "总结专用模型名",
-        "hint": "仅在走 OpenAI-compatible 回退链路时生效。可将“聊天模型”和“总结模型”拆开配置，让总结更稳定、格式更可控。",
-        "default": ""
       },
       "context_length": {
         "type": "int",
@@ -475,6 +424,187 @@
             "default": 30
           }
         }
+      }
+    }
+  },
+  "ingest": {
+    "type": "object",
+    "description": "聊天写入 —— 控制消息清洗、transcript 记录和长期记忆直写",
+    "hint": "自动写入会先把 AstrBot 消息链清洗为类似 MaiBot processed_plain_text 的文本，再写入 transcript；默认由自动总结把 transcript 提炼为长期记忆。若需要即时可检索，可将写入模式改为 direct 或 both。",
+    "items": {
+      "record_all_events": {
+        "type": "bool",
+        "description": "记录所有聊天消息",
+        "hint": "开启后，普通聊天会自动进入 Memorix transcript。关闭后仅保留 LLM tools 手动写入。",
+        "default": true
+      },
+      "skip_empty_text": {
+        "type": "bool",
+        "description": "忽略空消息",
+        "hint": "清洗后为空的消息不会写入 transcript 或长期记忆。",
+        "default": true
+      },
+      "skip_command_messages": {
+        "type": "bool",
+        "description": "忽略命令消息",
+        "hint": "开启后，以 command_prefixes 开头的消息不会被自动写入，避免把插件命令/管理命令污染记忆。",
+        "default": true
+      },
+      "command_prefixes": {
+        "type": "list",
+        "description": "命令前缀列表",
+        "hint": "用于判断哪些消息应视为命令并跳过自动记忆。例如 [\"/\", \"!\", \".\"]。",
+        "default": [
+          "/"
+        ]
+      },
+      "memory_write_mode": {
+        "type": "string",
+        "description": "长期记忆写入模式",
+        "hint": "transcript_only：只记录清洗后的聊天流水，达到阈值后由自动总结提炼长期记忆（推荐，更接近 MaiBot）；direct：同时把用户消息直接写入长期记忆；both：语义等同 direct，强调保留 transcript 与直写并行；auto：由内容路由器仅对稳定事实候选消息直写。",
+        "default": "transcript_only",
+        "options": [
+          "transcript_only",
+          "direct",
+          "both",
+          "auto"
+        ]
+      },
+      "direct_write_assistant": {
+        "type": "bool",
+        "description": "直写模式下记录机器人回复",
+        "hint": "仅在 memory_write_mode 为 direct/both 时生效。开启后机器人回复也会直接写入长期记忆；关闭后只直写用户消息。",
+        "default": true
+      },
+      "content_router": {
+        "type": "object",
+        "description": "内容路由器",
+        "hint": "在写入前按内容决定是否仅进 transcript、是否直写长期记忆。默认不丢弃 transcript；只有 memory_write_mode=auto 时才会自动挑选事实候选直写。",
+        "items": {
+          "enabled": {
+            "type": "bool",
+            "description": "启用内容路由",
+            "default": true
+          },
+          "drop_ephemeral_transcript": {
+            "type": "bool",
+            "description": "丢弃寒暄/纯占位 transcript",
+            "hint": "关闭时仍保留流水，只是不直写长期记忆；开启后短寒暄和纯占位消息会直接跳过。",
+            "default": false
+          },
+          "auto_direct_min_chars": {
+            "type": "int",
+            "description": "auto 模式直写最小字符数",
+            "hint": "memory_write_mode=auto 时，事实候选消息达到该长度才会直接写入长期记忆。",
+            "default": 12
+          }
+        }
+      },
+      "skip_placeholder_only": {
+        "type": "bool",
+        "description": "忽略纯占位消息",
+        "hint": "开启后，仅包含 [图片]、[表情]、[转发消息]、[文件] 等占位符且没有可理解文本的消息不会入库。",
+        "default": true
+      },
+      "max_message_chars": {
+        "type": "int",
+        "description": "单条消息最大字符数",
+        "hint": "消息链平面化后最多保留多少字符，超出会截断，避免异常长消息污染 transcript。",
+        "default": 2000
+      },
+      "max_forward_fetch": {
+        "type": "int",
+        "description": "合并转发最大拉取次数",
+        "hint": "OneBot 合并转发解析时最多递归拉取多少批转发内容。值越大越完整，但会增加平台 API 调用。",
+        "default": 8
+      },
+      "image_caption": {
+        "type": "object",
+        "description": "图片转述",
+        "hint": "可选调用视觉模型把图片转成简短文字后再写入记忆。默认关闭，避免额外模型调用成本。",
+        "items": {
+          "enabled": {
+            "type": "bool",
+            "description": "启用图片转述",
+            "default": false
+          },
+          "provider_id": {
+            "type": "string",
+            "description": "图片转述 Provider ID",
+            "hint": "留空使用当前会话 Provider；如需单独指定支持视觉的模型，可填写 Provider ID。",
+            "default": "",
+            "_special": "select_provider"
+          },
+          "max_count": {
+            "type": "int",
+            "description": "单条消息最多转述图片数",
+            "default": 1
+          },
+          "prompt": {
+            "type": "string",
+            "description": "图片转述提示词",
+            "default": "请简洁描述这张图片。"
+          }
+        }
+      }
+    }
+  },
+  "person_fact_writeback": {
+    "type": "object",
+    "description": "人物事实写回 —— 从用户发言中自动提取稳定人物事实",
+    "hint": "类似 MaiBot 的 PersonFactWritebackService。机器人回复后，以用户原始发言为证据提取稳定事实并写入长期记忆/人物画像线索。默认关闭以避免额外模型调用成本。",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用人物事实写回",
+        "default": false
+      },
+      "queue_maxsize": {
+        "type": "int",
+        "description": "写回队列上限",
+        "default": 256
+      },
+      "min_user_text_chars": {
+        "type": "int",
+        "description": "触发提取的用户消息最小长度",
+        "default": 4
+      },
+      "max_facts_per_turn": {
+        "type": "int",
+        "description": "单轮最多写入事实数",
+        "default": 5
+      },
+      "max_registry_facts": {
+        "type": "int",
+        "description": "人物注册表中保留的记忆特征上限",
+        "default": 30
+      },
+      "max_evidence_chars": {
+        "type": "int",
+        "description": "提取提示中保留的证据字符数",
+        "default": 800
+      },
+      "update_registry_memory_points": {
+        "type": "bool",
+        "description": "同步写入人物画像 memory_points",
+        "default": true
+      },
+      "chat_provider_id": {
+        "type": "string",
+        "description": "事实提取 Provider ID",
+        "hint": "留空使用当前会话/默认 Provider；也可指定独立文本模型。",
+        "default": "",
+        "_special": "select_provider"
+      },
+      "temperature": {
+        "type": "float",
+        "description": "事实提取温度",
+        "default": 0.1
+      },
+      "max_tokens": {
+        "type": "int",
+        "description": "事实提取最大输出 token",
+        "default": 800
       }
     }
   },
@@ -640,7 +770,7 @@
       },
       "segmentation_model": {
         "type": "string",
-        "description": "Episode 切分模型名，auto 表示跟随总结模型",
+        "description": "Episode 切分模型名，auto 表示跟随当前 LLM Provider",
         "default": "auto"
       }
     }

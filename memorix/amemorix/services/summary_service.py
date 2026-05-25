@@ -9,7 +9,7 @@ from typing import Any, Dict, List
 from ..common.logging import get_logger
 
 from ...core.utils.summary_importer import SummaryImporter
-from ...providers.astrbot_provider_bridge import AstrBotLLMClient, AstrBotProviderBridge
+from ...providers.astrbot_provider_bridge import AstrBotLLMClient
 from ..context import AppContext
 from ..llm_client import LLMClient
 from ..settings import resolve_openapi_endpoint_config
@@ -42,25 +42,15 @@ class SummaryService:
         provider_bridge = getattr(self.ctx, "provider_bridge", None)
         if provider_bridge is not None and getattr(provider_bridge, "enabled", False):
             retries = int(self.ctx.get_config("embedding.retry.max_attempts", 3) or 3)
-            summary_provider_id = str(self.ctx.get_config("summarization.chat_provider_id", "") or "").strip()
-            selected_bridge = provider_bridge
-            if summary_provider_id:
-                selected_bridge = AstrBotProviderBridge(
-                    astrbot_context=getattr(provider_bridge, "_context", None),
-                    chat_provider_id=summary_provider_id,
-                    embedding_provider_id=str(getattr(provider_bridge, "embedding_provider_id", "") or ""),
-                )
             logger.info(
                 "summary service uses AstrBot native chat provider: provider_id=%s",
-                summary_provider_id or str(getattr(selected_bridge, "chat_provider_id", "") or "<session-default>"),
+                str(getattr(provider_bridge, "chat_provider_id", "") or "<session-default>"),
             )
-            return AstrBotLLMClient(provider_bridge=selected_bridge, max_retries=max(1, retries))
+            return AstrBotLLMClient(provider_bridge=provider_bridge, max_retries=max(1, retries))
 
         endpoint_cfg = resolve_openapi_endpoint_config(self.ctx.config, section="embedding")
-        configured_model = str(self.ctx.get_config("summarization.model_name", "") or "").strip()
         selected_model = (
-            configured_model
-            or str(endpoint_cfg.get("chat_model", "") or "")
+            str(endpoint_cfg.get("chat_model", "") or "")
             or str(endpoint_cfg.get("model", "") or "")
             or "gpt-4o-mini"
         )

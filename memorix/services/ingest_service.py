@@ -8,12 +8,14 @@ from typing import Any, Dict, Optional
 from ..app_context import ScopeRuntimeManager
 from ..core.storage import detect_knowledge_type
 from ..core.utils.hash import compute_hash, normalize_text
+from .content_router import MemoryContentRouter
 
 
 class IngestService:
     def __init__(self, runtime_manager: ScopeRuntimeManager, plugin_config: Dict[str, Any]):
         self.runtime_manager = runtime_manager
         self.plugin_config = plugin_config or {}
+        self.content_router = MemoryContentRouter(self.plugin_config)
 
     @staticmethod
     def _nested(config: Dict[str, Any], key: str, default: Any = None) -> Any:
@@ -26,10 +28,14 @@ class IngestService:
         return current
 
     def _direct_enabled(self, role: str) -> bool:
-        mode = str(self._nested(self.plugin_config, "ingest.memory_write_mode", "direct") or "direct").strip().lower()
-        if mode not in {"direct", "transcript_only", "both"}:
-            mode = "direct"
-        if mode == "transcript_only":
+        mode = (
+            str(self._nested(self.plugin_config, "ingest.memory_write_mode", "transcript_only") or "transcript_only")
+            .strip()
+            .lower()
+        )
+        if mode not in {"direct", "transcript_only", "both", "auto"}:
+            mode = "transcript_only"
+        if mode in {"transcript_only", "auto"}:
             return False
         if str(role or "").strip().lower() == "assistant":
             return bool(self._nested(self.plugin_config, "ingest.direct_write_assistant", True))
@@ -173,6 +179,32 @@ class IngestService:
         runtime = await self.runtime_manager.get_runtime(scope_key)
         ctx = runtime.context
         session = str(session_id or "").strip() or f"scope:{scope_key}"
+        route = self.content_router.route_message(
+            role=role,
+            text=text,
+            metadata={
+                "scope_key": scope_key,
+                "session_id": session,
+                "user_id": str(user_id or "").strip(),
+                "group_id": str(group_id or "").strip(),
+                "platform": str(platform or "").strip(),
+            },
+        )
+        if not route.store_transcript and not route.write_direct:
+            return {
+                "success": True,
+                "skipped": True,
+                "reason": route.reason,
+                "result": {
+                    "mode": route.route,
+                    "route": {
+                        "store_transcript": route.store_transcript,
+                        "write_direct": route.write_direct,
+                        "fact_candidate": route.fact_candidate,
+                        "reason": route.reason,
+                    },
+                },
+            }
 
         ctx.metadata_store.upsert_transcript_session(
             session_id=session,
@@ -202,13 +234,16 @@ class IngestService:
         filtered_meta = {key: value for key, value in msg_meta.items() if value}
         if filtered_meta:
             msg_record["metadata"] = filtered_meta
-        ctx.metadata_store.append_transcript_messages(
-            session_id=session,
-            messages=[msg_record],
-        )
+        transcript_stored = False
+        if route.store_transcript:
+            ctx.metadata_store.append_transcript_messages(
+                session_id=session,
+                messages=[msg_record],
+            )
+            transcript_stored = True
 
         direct_result: Optional[Dict[str, Any]] = None
-        if self._direct_enabled(role):
+        if route.write_direct:
             direct_result = await self._write_direct_memory(
                 ctx=ctx,
                 session_id=session,
@@ -231,7 +266,13 @@ class IngestService:
             "skipped": False,
             "result": {
                 "mode": "direct" if direct_result is not None else "transcript_only",
-                "transcript": {"session_id": session, "stored": True},
+                "route": {
+                    "store_transcript": route.store_transcript,
+                    "write_direct": route.write_direct,
+                    "fact_candidate": route.fact_candidate,
+                    "reason": route.reason,
+                },
+                "transcript": {"session_id": session, "stored": transcript_stored},
                 "direct": direct_result,
             },
         }

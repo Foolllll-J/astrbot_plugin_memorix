@@ -182,54 +182,24 @@ class ProfileService:
         ctx = runtime.context
 
         profile_enabled = bool(ctx.get_config("person_profile.enabled", True))
-        opt_in_required = bool(ctx.get_config("person_profile.opt_in_required", True))
-        default_enabled = bool(ctx.get_config("person_profile.default_injection_enabled", False))
-        global_enabled = bool(ctx.get_config("person_profile.global_injection_enabled", False))
 
         sid = str(session_id or "").strip()
         uid = str(user_id or "").strip()
-        stored_enabled = default_enabled
-        if sid and uid:
-            stored_enabled = bool(ctx.metadata_store.get_person_profile_switch(sid, uid, default=default_enabled))
-
-        if profile_enabled and global_enabled:
-            effective = True
-        else:
-            effective = profile_enabled and (stored_enabled if opt_in_required else default_enabled)
         return {
             "success": True,
             "scope_key": scope_key,
             "session_id": sid,
             "user_id": uid,
             "person_profile_enabled": profile_enabled,
-            "opt_in_required": opt_in_required,
-            "default_injection_enabled": default_enabled,
-            "global_injection_enabled": global_enabled,
-            "switch_enabled": stored_enabled,
-            "effective_injection_enabled": effective,
+            "effective_injection_enabled": profile_enabled,
         }
 
-    async def set_injection_switch(
-        self,
-        *,
-        scope_key: str,
-        session_id: str,
-        user_id: str,
-        enabled: bool,
-    ) -> Dict[str, Any]:
-        sid = str(session_id or "").strip()
-        uid = str(user_id or "").strip()
-        if not sid or not uid:
-            raise ValueError("session_id/user_id is required")
-
-        runtime = await self.runtime_manager.get_runtime(scope_key)
-        runtime.context.metadata_store.set_person_profile_switch(
-            stream_id=sid,
-            user_id=uid,
-            enabled=bool(enabled),
-        )
-        status = await self.get_injection_status(scope_key=scope_key, session_id=sid, user_id=uid)
-        status["updated"] = True
+    async def set_injection_switch(self, *, scope_key: str, session_id: str, user_id: str, enabled: bool) -> Dict[str, Any]:
+        """Compatibility shim: injection is now controlled by person_profile.enabled only."""
+        del enabled
+        status = await self.get_injection_status(scope_key=scope_key, session_id=session_id, user_id=user_id)
+        status["updated"] = False
+        status["message"] = "画像注入由 person_profile.enabled 总开关控制"
         return status
 
     async def is_injection_enabled(

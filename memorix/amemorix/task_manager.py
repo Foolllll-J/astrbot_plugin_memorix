@@ -256,6 +256,15 @@ class TaskManager:
                     context_length=resolved_context_length,
                 )
                 if bool(result.get("success")):
+                    self.ctx.metadata_store.mark_transcript_summary_complete(
+                        session_id=session_id,
+                        last_message_created_at=row[2],
+                        metadata={
+                            "source": f"chat_summary:{session_id}",
+                            "trigger": "bulk_summary_import",
+                            "context_length": resolved_context_length,
+                        },
+                    )
                     success_count += 1
                 else:
                     fail_count += 1
@@ -345,6 +354,17 @@ class TaskManager:
                     context_length=context_length,
                 )
                 status = TASK_STATUS_SUCCEEDED if result.get("success") else TASK_STATUS_FAILED
+                if status == TASK_STATUS_SUCCEEDED:
+                    self.ctx.metadata_store.mark_transcript_summary_complete(
+                        session_id=session_id,
+                        last_message_created_at=payload.get("last_message_created_at"),
+                        task_id=task_id,
+                        metadata={
+                            "source": source,
+                            "auto_import": bool(payload.get("auto_import")),
+                            "context_length": context_length,
+                        },
+                    )
                 self.ctx.metadata_store.update_async_task(
                     task_id=task_id,
                     status=status,
@@ -455,7 +475,7 @@ class TaskManager:
                 limit = int(self.ctx.get_config("person_profile.max_refresh_per_cycle", 50))
                 top_k = int(self.ctx.get_config("person_profile.top_k_evidence", 12))
 
-                pids = self.ctx.metadata_store.get_active_person_ids_for_enabled_switches(
+                pids = self.ctx.metadata_store.get_active_person_ids(
                     active_after=active_after,
                     limit=limit,
                 )

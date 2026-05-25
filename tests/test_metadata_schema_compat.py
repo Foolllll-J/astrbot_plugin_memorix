@@ -148,6 +148,38 @@ def test_connect_patches_legacy_transcript_position_column(tmp_path):
         store.close()
 
 
+def test_transcript_summary_state_cursor_roundtrip(tmp_path):
+    store = MetadataStore(tmp_path)
+    store.connect()
+    try:
+        store.upsert_transcript_session(session_id="s1", source="chat", metadata={})
+        store.append_transcript_messages(
+            session_id="s1",
+            messages=[
+                {"role": "user", "content": "hello", "created_at": 10.0},
+                {"role": "assistant", "content": "hi", "created_at": 11.0},
+            ],
+        )
+
+        state = store.mark_transcript_summary_complete(
+            session_id="s1",
+            task_id="task-1",
+            metadata={"trigger": "test"},
+        )
+
+        assert state["session_id"] == "s1"
+        assert state["last_task_id"] == "task-1"
+        assert state["last_message_created_at"] == 11.0
+        assert state["summary_count"] == 1
+        assert state["metadata"]["trigger"] == "test"
+
+        second = store.mark_transcript_summary_complete(session_id="s1", last_message_created_at=12.0)
+        assert second["summary_count"] == 2
+        assert second["last_message_created_at"] == 12.0
+    finally:
+        store.close()
+
+
 def test_existing_version_db_still_gets_episode_position_patch(tmp_path):
     db_path = tmp_path / "metadata.db"
     conn = sqlite3.connect(db_path)

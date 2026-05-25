@@ -1,6 +1,15 @@
+import asyncio
 from types import SimpleNamespace
 
+import numpy as np
+
 from astrbot_plugin_memorix.main import MemorixPlugin
+from astrbot_plugin_memorix.memorix.core.storage.metadata_store import MetadataStore
+from astrbot_plugin_memorix.memorix.services.content_router import MemoryContentRouter
+from astrbot_plugin_memorix.memorix.services.person_fact_writeback_service import (
+    PersonFactWritebackItem,
+    PersonFactWritebackService,
+)
 from astrbot_plugin_memorix.memorix.tools import _format_search_result_for_llm, build_memorix_tools
 
 
@@ -66,8 +75,6 @@ def test_plugin_registers_and_removes_llm_tools():
     # Avoid starting the embedded WebUI bridge in this unit test.
     plugin.webui_page_bridge.register = lambda *args, **kwargs: None
 
-    import asyncio
-
     asyncio.run(plugin.initialize())
     assert [tool.name for tool in ctx.added] == EXPECTED_TOOL_NAMES
 
@@ -113,3 +120,110 @@ def test_search_memory_result_is_formatted_for_llm():
     assert "不要编造" in text
     assert "小真寻表示不知自亦飞瑶是谁" in text
     assert "未找到匹配的长期记忆" not in text
+
+
+def test_content_router_auto_directs_fact_candidate_only():
+    router = MemoryContentRouter({"ingest": {"memory_write_mode": "auto"}})
+    fact_route = router.route_message(role="user", text="我喜欢深夜打游戏，也经常玩 RPG")
+    chat_route = router.route_message(role="user", text="今天这个天气真不错")
+    assistant_route = router.route_message(role="assistant", text="我喜欢帮你记录信息")
+
+    assert fact_route.store_transcript is True
+    assert fact_route.write_direct is True
+    assert fact_route.reason == "auto_fact_candidate"
+    assert chat_route.write_direct is False
+    assert assistant_route.write_direct is False
+
+
+def test_content_router_can_drop_ephemeral_transcript():
+    router = MemoryContentRouter(
+        {"ingest": {"memory_write_mode": "auto", "content_router": {"drop_ephemeral_transcript": True}}}
+    )
+    route = router.route_message(role="user", text="哈哈")
+    assert route.store_transcript is False
+    assert route.write_direct is False
+    assert route.reason == "ephemeral"
+
+
+class _FakeRuntimeManager:
+    def __init__(self, ctx):
+        self.ctx = ctx
+
+    async def get_runtime(self, _scope_key):
+        return SimpleNamespace(context=self.ctx)
+
+
+class _FakeVectorStore:
+    def __init__(self):
+        self.ids = set()
+
+    def __contains__(self, item):
+        return item in self.ids
+
+    def add(self, vectors, ids):
+        del vectors
+        self.ids.update(ids)
+
+    def save(self):
+        return None
+
+
+class _FakeGraphStore:
+    def save(self):
+        return None
+
+
+class _FakeEmbeddingManager:
+    async def encode(self, _text):
+        return np.ones((4,), dtype=np.float32)
+
+
+class _StaticFactService(PersonFactWritebackService):
+    async def _complete(self, ctx, prompt):
+        del ctx, prompt
+        return '["小明喜欢深夜打游戏"]'
+
+
+def test_person_fact_writeback_stores_paragraph_and_registry_points(tmp_path):
+    metadata_store = MetadataStore(tmp_path)
+    metadata_store.connect()
+    try:
+        ctx = SimpleNamespace(
+            metadata_store=metadata_store,
+            vector_store=_FakeVectorStore(),
+            graph_store=_FakeGraphStore(),
+            embedding_manager=_FakeEmbeddingManager(),
+            provider_bridge=None,
+            llm_client=None,
+        )
+        service = _StaticFactService(
+            _FakeRuntimeManager(ctx),
+            {
+                "person_fact_writeback": {
+                    "enabled": True,
+                    "update_registry_memory_points": True,
+                }
+            },
+        )
+        item = PersonFactWritebackItem(
+            scope_key="default",
+            session_id="s1",
+            user_text="我喜欢深夜打游戏",
+            assistant_text="我记住了你喜欢深夜打游戏。",
+            user_id="u1",
+            platform="qq",
+            sender_name="小明",
+            message_id="m1",
+            timestamp=123.0,
+        )
+
+        asyncio.run(service._handle_item(item))
+
+        record = metadata_store.get_person_registry("qq:u1")
+        assert record is not None
+        assert "小明喜欢深夜打游戏" in record["memory_points"]
+        paragraphs = metadata_store.get_paragraphs_by_source("person_fact:s1:qq:u1")
+        assert len(paragraphs) == 1
+        assert "小明喜欢深夜打游戏" in paragraphs[0]["content"]
+    finally:
+        metadata_store.close()

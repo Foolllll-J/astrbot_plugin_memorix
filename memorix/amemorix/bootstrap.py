@@ -232,13 +232,10 @@ def build_context(settings: AppSettings) -> AppContext:
 
     llm_endpoint_cfg = resolve_openapi_endpoint_config(settings.config, section="embedding")
     chat_model = str(
-        settings.get("summarization.model_name", "")
-        or llm_endpoint_cfg.get("chat_model", "")
+        llm_endpoint_cfg.get("chat_model", "")
         or llm_endpoint_cfg.get("model", "")
         or "gpt-4o-mini"
     )
-    if chat_model.lower() == "auto":
-        chat_model = str(llm_endpoint_cfg.get("chat_model", "") or llm_endpoint_cfg.get("model", "") or "gpt-4o-mini")
     llm_client = LLMClient(
         base_url=str(llm_endpoint_cfg.get("base_url", "")),
         api_key=str(llm_endpoint_cfg.get("api_key", "")),

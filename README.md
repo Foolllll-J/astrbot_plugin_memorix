@@ -82,10 +82,10 @@ Dashboard 内嵌导入视图默认启用。页面可进行如下三种导入：
 ① 作用域路由 ── 按 scope.mode 确定记忆归属
   │
   ▼
-② 原始消息写入 ── 默认采用 MaiBot 风格 direct 写入：同时进入 transcript、段落向量、实体索引与 Episode 队列；可切回 transcript_only
+② 消息清洗与内容路由 ── 默认采用 MaiBot 风格 transcript_only：先生成 processed_plain_text 并进入 transcript，再由总结任务提炼长期记忆；可切到 direct/both/auto 获得直写或事实候选直写
   │
   ▼
-③ 总结提炼 ── 保留 AstrBot 侧自动/手动总结能力，继续生成高质量段落、关系、Episode 并写入索引
+③ 写回提炼 ── 自动/手动总结带状态游标；可选人物事实写回会在机器人回复后提取用户稳定事实
   │
   ▼
 ④ 检索注入 ── LLM 请求时按 scope/source 混合检索记忆，注入当前用户消息上下文
@@ -116,7 +116,7 @@ https://github.com/exynos967/astrbot_plugin_memorix
 
 | 配置项 | 值 | 说明 |
 |---|---|---|
-| `provider.chat_provider_id` | AstrBot 中的聊天 Provider ID（可选） | 指定后优先使用该模型做总结/画像 |
+| `provider.chat_provider_id` | AstrBot 中的聊天 Provider ID（可选） | 指定后优先使用该模型做总结/画像；总结不再单独配置 Provider/模型 |
 | `embedding.enabled` | `true` | 启用远程向量化 |
 | `embedding.openapi.base_url` | 你的 Embedding API 地址 | 支持不带 `/v1`，插件会自动补全 |
 | `embedding.openapi.api_key` | 你的 API Key | 远程鉴权 |
@@ -129,7 +129,7 @@ https://github.com/exynos967/astrbot_plugin_memorix
 - **日常记忆写入/召回**：由 LLM 工具自动调用 `search_memory`、`ingest_summary`、`ingest_text`、`get_person_profile`、`maintain_memory`、`memory_stats` 完成。
 - **管理员记忆维护**：已注册与 MaiBot 对齐的管理工具 `memory_graph_admin`、`memory_source_admin`、`memory_episode_admin`、`memory_profile_admin`、`memory_runtime_admin`、`memory_import_admin`、`memory_tuning_admin`、`memory_v5_admin`、`memory_delete_admin`；这些工具仅 AstrBot 管理员事件可调用。
 - **图谱、检索、导入、总结、回收站、画像覆盖等管理操作**：可在 AstrBot Dashboard 的插件详情页打开 `Memorix 控制台`，也可由管理员通过上述管理工具让 LLM 执行。
-- **作用域、检索、生命周期、人物画像、定时总结等策略**：在 AstrBot 插件配置页修改 `_conf_schema.json` 暴露的配置项。
+- **作用域、检索、生命周期、人物画像、自动总结等策略**：在 AstrBot 插件配置页修改 `_conf_schema.json` 暴露的配置项。
 
 ## 作用域模式
 
@@ -175,9 +175,27 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | `ingest.record_all_events` | bool | `true` | 是否记录所有消息事件 |
 | `ingest.skip_empty_text` | bool | `true` | 忽略空文本消息 |
 | `ingest.skip_command_messages` | bool | `true` | 忽略命令消息（按 `command_prefixes` 判断） |
-| `ingest.memory_write_mode` | string | `direct` | 写入模式：`direct`/`both` 为 MaiBot 风格直接写入长期记忆并保留 transcript；`transcript_only` 为旧的仅流水模式 |
+| `ingest.memory_write_mode` | string | `transcript_only` | 写入模式：`transcript_only` 先保留聊天流水并由自动总结提炼长期记忆（更接近 MaiBot）；`direct`/`both` 会额外直接写入长期记忆；`auto` 只让事实候选消息直写 |
 | `ingest.direct_write_assistant` | bool | `true` | 是否将机器人回复也直接写入长期记忆 |
+| `ingest.content_router.enabled` | bool | `true` | 启用内容路由器，决定 transcript/直写策略 |
+| `ingest.content_router.drop_ephemeral_transcript` | bool | `false` | 是否直接丢弃寒暄/纯占位消息的 transcript |
+| `ingest.content_router.auto_direct_min_chars` | int | `12` | `auto` 模式下事实候选消息直写所需的最小字符数 |
 | `ingest.command_prefixes` | list | `["/"]` | 命令前缀列表（支持自定义前缀，如 `["/", "!", "."]`） |
+| `ingest.skip_placeholder_only` | bool | `true` | 忽略只有 `[图片]`、`[表情]`、`[转发消息]` 等占位符的消息 |
+| `ingest.max_message_chars` | int | `2000` | 单条消息平面化后写入 transcript/记忆的最大字符数 |
+| `ingest.max_forward_fetch` | int | `8` | OneBot 合并转发解析时最多拉取的转发消息层数/批次 |
+| `ingest.image_caption.enabled` | bool | `false` | 是否调用当前聊天 Provider 对图片做转述；默认关闭以避免额外 LLM 成本 |
+| `ingest.image_caption.provider_id` | string | `""` | 图片转述专用 Provider ID；留空使用当前会话 Provider |
+| `ingest.image_caption.max_count` | int | `1` | 单条消息最多转述的图片数量 |
+
+### 人物事实写回（person_fact_writeback）
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `person_fact_writeback.enabled` | bool | `false` | 启用后，机器人回复后从用户原始发言中提取稳定人物事实 |
+| `person_fact_writeback.max_facts_per_turn` | int | `5` | 单轮最多写入事实数 |
+| `person_fact_writeback.update_registry_memory_points` | bool | `true` | 同步把事实追加到人物画像 memory_points |
+| `person_fact_writeback.chat_provider_id` | string | `""` | 事实提取专用 Provider ID，留空使用当前/默认 Provider |
 
 ### 提供商（provider）
 
@@ -239,12 +257,7 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | `summarization.context_length` | int | `50` | 总结上下文长度 |
 | `summarization.default_knowledge_type` | string | `narrative` | 总结知识类型（narrative / factual / mixed / structured / auto） |
 
-### 定时总结（schedule）
-
-| 配置项 | 类型 | 默认值 | 说明 |
-|---|---|---|---|
-| `schedule.enabled` | bool | `true` | 启用定时总结任务 |
-| `schedule.import_times` | list | `["04:00"]` | 每日触发时间点（HH:MM） |
+> 说明：对话中的自动总结会按新增消息数/冷却时间触发；手动或 WebUI 批量总结共用同一套 summary 游标，避免重复总结同一批 transcript。原“定时总结”配置未接入运行时调度，已从配置页移除，避免和自动总结语义混淆。
 
 ### WebUI
 

@@ -548,6 +548,23 @@ class MetadataStore:
             CREATE INDEX IF NOT EXISTS idx_transcript_sessions_updated
             ON transcript_sessions(updated_at DESC)
         """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS transcript_summary_state (
+                session_id TEXT PRIMARY KEY,
+                last_summary_at REAL,
+                last_message_created_at REAL,
+                last_task_id TEXT,
+                summary_count INTEGER NOT NULL DEFAULT 0,
+                metadata_json TEXT,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES transcript_sessions(session_id) ON DELETE CASCADE
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_transcript_summary_state_updated
+            ON transcript_summary_state(updated_at DESC)
+        """)
 
     def _ensure_transcript_schema(self) -> None:
         if not self._conn:
@@ -750,17 +767,6 @@ class MetadataStore:
         self._conn.commit()
 
     def _create_person_profile_schema(self, cursor: sqlite3.Cursor) -> None:
-        # 人物画像开关表（按 stream_id + user_id 维度）
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS person_profile_switches (
-                stream_id TEXT NOT NULL,
-                user_id TEXT NOT NULL,
-                enabled INTEGER NOT NULL DEFAULT 0,
-                updated_at REAL NOT NULL,
-                PRIMARY KEY (stream_id, user_id)
-            )
-        """)
-
         # 人物画像快照表（版本化）
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS person_profile_snapshots (
@@ -779,7 +785,7 @@ class MetadataStore:
             )
         """)
 
-        # 已开启范围内的活跃人物集合
+        # 最近活跃人物集合（刷新是否执行由 person_profile.enabled 总开关控制）
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS person_profile_active_persons (
                 stream_id TEXT NOT NULL,
@@ -799,10 +805,6 @@ class MetadataStore:
             )
         """)
 
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_person_profile_switches_enabled
-            ON person_profile_switches(enabled)
-        """)
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_person_profile_snapshots_person
             ON person_profile_snapshots(person_id, updated_at DESC)
@@ -3252,6 +3254,100 @@ class MetadataStore:
             for row in cursor.fetchall()
         ]
 
+    def _transcript_summary_state_row_to_dict(self, row: sqlite3.Row) -> Dict[str, Any]:
+        metadata = self._json_loads(row["metadata_json"], {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+        return {
+            "session_id": str(row["session_id"] or ""),
+            "last_summary_at": row["last_summary_at"],
+            "last_message_created_at": row["last_message_created_at"],
+            "last_task_id": str(row["last_task_id"] or ""),
+            "summary_count": int(row["summary_count"] or 0),
+            "metadata": metadata,
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    def get_transcript_summary_state(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Return the last completed summary cursor for a transcript session."""
+        self._ensure_transcript_schema()
+        token = str(session_id or "").strip()
+        if not token:
+            return None
+        cursor = self._conn.cursor()
+        cursor.execute(
+            """
+            SELECT *
+            FROM transcript_summary_state
+            WHERE session_id = ?
+            LIMIT 1
+            """,
+            (token,),
+        )
+        row = cursor.fetchone()
+        return self._transcript_summary_state_row_to_dict(row) if row else None
+
+    def mark_transcript_summary_complete(
+        self,
+        *,
+        session_id: str,
+        last_message_created_at: Optional[float] = None,
+        task_id: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Persist the auto-summary cursor for a transcript session.
+
+        If ``last_message_created_at`` is omitted, the current max transcript
+        message timestamp is used. This keeps manual and bulk summary imports
+        from being immediately re-queued by the automatic trigger.
+        """
+        self._ensure_transcript_schema()
+        token = str(session_id or "").strip()
+        if not token:
+            raise ValueError("session_id 不能为空")
+
+        cursor = self._conn.cursor()
+        resolved_last_message = last_message_created_at
+        if resolved_last_message is None:
+            cursor.execute(
+                "SELECT MAX(created_at) FROM transcript_messages WHERE session_id = ?",
+                (token,),
+            )
+            value = cursor.fetchone()[0]
+            resolved_last_message = float(value) if value is not None else None
+
+        now = datetime.now().timestamp()
+        cursor.execute(
+            """
+            INSERT INTO transcript_summary_state (
+                session_id, last_summary_at, last_message_created_at, last_task_id,
+                summary_count, metadata_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                last_summary_at = excluded.last_summary_at,
+                last_message_created_at = excluded.last_message_created_at,
+                last_task_id = excluded.last_task_id,
+                summary_count = transcript_summary_state.summary_count + 1,
+                metadata_json = excluded.metadata_json,
+                updated_at = excluded.updated_at
+            """,
+            (
+                token,
+                now,
+                resolved_last_message,
+                str(task_id or "").strip(),
+                self._json_dumps(metadata or {}),
+                now,
+                now,
+            ),
+        )
+        self._conn.commit()
+        state = self.get_transcript_summary_state(token)
+        if state is None:
+            raise RuntimeError("summary state 写入后读取失败")
+        return state
+
     def count_paragraphs(self, include_deleted: bool = False, only_deleted: bool = False) -> int:
         """
         获取段落数量
@@ -4682,69 +4778,6 @@ class MetadataStore:
             "items": items,
         }
 
-    def set_person_profile_switch(
-        self,
-        stream_id: str,
-        user_id: str,
-        enabled: bool,
-        updated_at: Optional[float] = None,
-    ) -> None:
-        """设置人物画像自动注入开关（按 stream_id + user_id）。"""
-        if not stream_id or not user_id:
-            raise ValueError("stream_id 和 user_id 不能为空")
-
-        ts = float(updated_at) if updated_at is not None else datetime.now().timestamp()
-        cursor = self._conn.cursor()
-        cursor.execute(
-            """
-            INSERT INTO person_profile_switches (stream_id, user_id, enabled, updated_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(stream_id, user_id) DO UPDATE SET
-                enabled = excluded.enabled,
-                updated_at = excluded.updated_at
-            """,
-            (str(stream_id), str(user_id), 1 if enabled else 0, ts),
-        )
-        self._conn.commit()
-
-    def get_person_profile_switch(self, stream_id: str, user_id: str, default: bool = False) -> bool:
-        """读取人物画像自动注入开关。"""
-        if not stream_id or not user_id:
-            return bool(default)
-
-        cursor = self._conn.cursor()
-        cursor.execute(
-            "SELECT enabled FROM person_profile_switches WHERE stream_id = ? AND user_id = ?",
-            (str(stream_id), str(user_id)),
-        )
-        row = cursor.fetchone()
-        if not row:
-            return bool(default)
-        return bool(row[0])
-
-    def get_enabled_person_profile_switches(self, limit: int = 1000) -> List[Dict[str, Any]]:
-        """获取已开启人物画像注入开关的会话范围。"""
-        cursor = self._conn.cursor()
-        cursor.execute(
-            """
-            SELECT stream_id, user_id, enabled, updated_at
-            FROM person_profile_switches
-            WHERE enabled = 1
-            ORDER BY updated_at DESC
-            LIMIT ?
-            """,
-            (int(max(1, limit)),),
-        )
-        return [
-            {
-                "stream_id": row[0],
-                "user_id": row[1],
-                "enabled": bool(row[2]),
-                "updated_at": row[3],
-            }
-            for row in cursor.fetchall()
-        ]
-
     def mark_person_profile_active(
         self,
         stream_id: str,
@@ -4768,26 +4801,23 @@ class MetadataStore:
         )
         self._conn.commit()
 
-    def get_active_person_ids_for_enabled_switches(
+    def get_active_person_ids(
         self,
         active_after: Optional[float] = None,
         limit: int = 200,
     ) -> List[str]:
-        """获取“已开启开关范围内”的活跃人物集合。"""
+        """获取最近活跃人物集合。"""
         cursor = self._conn.cursor()
         sql = """
-            SELECT a.person_id, MAX(a.last_seen_at) AS last_seen
-            FROM person_profile_active_persons a
-            JOIN person_profile_switches s
-              ON a.stream_id = s.stream_id AND a.user_id = s.user_id
-            WHERE s.enabled = 1
+            SELECT person_id, MAX(last_seen_at) AS last_seen
+            FROM person_profile_active_persons
         """
         params: List[Any] = []
         if active_after is not None:
-            sql += " AND a.last_seen_at >= ?"
+            sql += " WHERE last_seen_at >= ?"
             params.append(float(active_after))
         sql += """
-            GROUP BY a.person_id
+            GROUP BY person_id
             ORDER BY last_seen DESC
             LIMIT ?
         """
