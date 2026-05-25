@@ -23,16 +23,28 @@ class DummyPlugin:
         return "group:test"
 
 
+EXPECTED_TOOL_NAMES = [
+    "search_memory",
+    "ingest_summary",
+    "ingest_text",
+    "get_person_profile",
+    "maintain_memory",
+    "memory_stats",
+    "memory_graph_admin",
+    "memory_source_admin",
+    "memory_episode_admin",
+    "memory_profile_admin",
+    "memory_runtime_admin",
+    "memory_import_admin",
+    "memory_tuning_admin",
+    "memory_v5_admin",
+    "memory_delete_admin",
+]
+
+
 def test_build_memorix_tools_matches_maibot_core_names():
     names = [tool.name for tool in build_memorix_tools(DummyPlugin())]
-    assert names == [
-        "search_memory",
-        "ingest_summary",
-        "ingest_text",
-        "get_person_profile",
-        "maintain_memory",
-        "memory_stats",
-    ]
+    assert names == EXPECTED_TOOL_NAMES
 
 
 def test_plugin_registers_and_removes_llm_tools():
@@ -45,14 +57,7 @@ def test_plugin_registers_and_removes_llm_tools():
     import asyncio
 
     asyncio.run(plugin.initialize())
-    assert [tool.name for tool in ctx.added] == [
-        "search_memory",
-        "ingest_summary",
-        "ingest_text",
-        "get_person_profile",
-        "maintain_memory",
-        "memory_stats",
-    ]
+    assert [tool.name for tool in ctx.added] == EXPECTED_TOOL_NAMES
 
     plugin._remove_llm_tools()
     assert ctx.removed == [tool.name for tool in ctx.added]

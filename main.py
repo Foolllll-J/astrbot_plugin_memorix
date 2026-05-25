@@ -6,7 +6,7 @@ from astrbot.api.star import Context, Star, register
 
 from .memorix.app_context import ScopeRuntimeManager
 from .memorix.scope_router import ScopeRouter
-from .memorix.services import IngestService, MemoryService, ProfileService, QueryService
+from .memorix.services import AdminService, IngestService, MemoryService, ProfileService, QueryService
 from .memorix.tools import build_memorix_tools
 from .memorix.webui.plugin_page_bridge import PluginPageWebUIBridge
 
@@ -27,6 +27,7 @@ class MemorixPlugin(Star):
         self.query_service = QueryService(self.runtime_manager)
         self.memory_service = MemoryService(self.runtime_manager)
         self.profile_service = ProfileService(self.runtime_manager)
+        self.admin_service = AdminService(self.runtime_manager)
         self.webui_page_bridge = PluginPageWebUIBridge(
             runtime_manager=self.runtime_manager,
             plugin_config=self.config,
@@ -44,6 +45,7 @@ class MemorixPlugin(Star):
         logger.info("[memorix] terminate start")
         self._remove_llm_tools()
         await self.webui_page_bridge.close()
+        await self.admin_service.close()
         await self.runtime_manager.close_all()
         logger.info("[memorix] terminate done")
 

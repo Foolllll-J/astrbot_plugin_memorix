@@ -378,12 +378,13 @@ class MemorixMaintainTool(MemorixToolBase):
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "动作：reinforce/protect/restore/freeze/status。",
-                    "enum": ["reinforce", "protect", "restore", "freeze", "status"],
+                    "description": "动作：reinforce/protect/restore/freeze/status/recycle_bin。",
+                    "enum": ["reinforce", "protect", "restore", "freeze", "status", "recycle_bin"],
                 },
                 "target": {"type": "string", "description": "目标 hash 或查询文本。"},
                 "hours": {"type": "number", "description": "protect 的保护时长；<=0 表示永久 pin。"},
                 "restore_type": {"type": "string", "description": "restore 类型：relation/entity。"},
+                "limit": {"type": "integer", "description": "recycle_bin 返回条数，默认 50。"},
                 "scope_key": {"type": "string", "description": "高级：显式指定 Memorix scope，通常留空。"},
             },
             "required": ["action"],
@@ -414,6 +415,12 @@ class MemorixMaintainTool(MemorixToolBase):
                 )
             elif action == "freeze":
                 data = await self.plugin.memory_service.freeze(scope_key=scope_key, query_or_hash=target)
+            elif action == "recycle_bin":
+                data = await self.plugin.admin_service.v5_admin(
+                    scope_key=scope_key,
+                    action="recycle_bin",
+                    limit=_to_int(kwargs.get("limit", 50), 50, min_value=1, max_value=500),
+                )
             else:
                 return _tool_result({"success": False, "error": f"unsupported action: {action}", "scope": scope_key})
             data["scope"] = scope_key
@@ -449,6 +456,192 @@ class MemorixStatsTool(MemorixToolBase):
             return _tool_result({"success": False, "error": str(exc), "scope": scope_key})
 
 
+def _admin_parameters(actions: str) -> dict:
+    return {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "description": f"管理动作：{actions}。"},
+            "target": {"type": "string", "description": "目标标识、hash 或查询文本，可选。"},
+            "query": {"type": "string", "description": "查询文本，可选。"},
+            "limit": {"type": "integer", "description": "返回条数，默认按动作决定。"},
+            "scope_key": {"type": "string", "description": "高级：显式指定 Memorix scope，通常留空。"},
+            "source": {"type": "string", "description": "来源批次/source，可选。"},
+            "sources": {"type": "array", "items": {"type": "string"}, "description": "来源批次列表，可选。"},
+            "node": {"type": "string", "description": "节点名，可选。"},
+            "node_id": {"type": "string", "description": "节点 ID，可选。"},
+            "name": {"type": "string", "description": "名称，可选。"},
+            "old_name": {"type": "string", "description": "重命名前节点名。"},
+            "new_name": {"type": "string", "description": "重命名后节点名。"},
+            "source_node": {"type": "string", "description": "图边源节点，兼容字段。"},
+            "subject": {"type": "string", "description": "关系主体/source。"},
+            "predicate": {"type": "string", "description": "关系谓词/标签。"},
+            "object": {"type": "string", "description": "关系客体/target。"},
+            "target_node": {"type": "string", "description": "图边目标节点，兼容字段。"},
+            "weight": {"type": "number", "description": "边权重/置信度。"},
+            "confidence": {"type": "number", "description": "关系置信度。"},
+            "hash": {"type": "string", "description": "段落/关系/实体 hash。"},
+            "relation_hash": {"type": "string", "description": "关系 hash。"},
+            "mode": {"type": "string", "description": "delete_admin 的模式：paragraph/entity/relation/source/clear。"},
+            "selector": {"type": "object", "description": "delete_admin 选择器对象。"},
+            "restore_type": {"type": "string", "description": "恢复类型：relation/entity。"},
+            "person_id": {"type": "string", "description": "人物 ID。"},
+            "person_keyword": {"type": "string", "description": "人物关键词。"},
+            "keyword": {"type": "string", "description": "关键词。"},
+            "override_text": {"type": "string", "description": "人物画像手工覆盖内容。"},
+            "text": {"type": "string", "description": "文本内容。"},
+            "task_id": {"type": "string", "description": "导入任务 ID。"},
+            "file_id": {"type": "string", "description": "导入任务文件 ID。"},
+            "content": {"type": "string", "description": "粘贴导入文本。"},
+            "alias": {"type": "string", "description": "导入扫描路径别名。"},
+            "relative_path": {"type": "string", "description": "导入扫描相对路径。"},
+            "include_chunks": {"type": "boolean", "description": "是否包含导入 chunks。"},
+            "include_paragraphs": {"type": "boolean", "description": "是否包含 Episode 段落。"},
+            "enabled": {"type": "boolean", "description": "开关值。"},
+            "hours": {"type": "number", "description": "保护时长。"},
+            "strength": {"type": "number", "description": "强化/弱化强度。"},
+            "reason": {"type": "string", "description": "操作原因。"},
+        },
+        "required": ["action"],
+        "additionalProperties": True,
+    }
+
+
+@dataclass
+class MemorixAdminToolBase(MemorixToolBase):
+    admin_method: str = Field(default="", repr=False)
+
+    def _require_admin(self, event: AstrMessageEvent) -> None:
+        is_admin = getattr(event, "is_admin", None)
+        allowed = bool(is_admin()) if callable(is_admin) else str(getattr(event, "role", "member")) == "admin"
+        if not allowed:
+            raise PermissionError("Memorix admin tools require AstrBot admin permission.")
+
+    async def _call_admin(self, context: ContextWrapper[AstrAgentContext], **kwargs) -> str:
+        scope_key = "unknown"
+        action = str(kwargs.get("action", "") or "").strip().lower()
+        try:
+            event = self._event(context)
+            self._require_admin(event)
+            scope_key = self._scope_key(event, str(kwargs.pop("scope_key", "") or ""))
+            action = str(kwargs.pop("action", "") or "").strip().lower()
+            if not action:
+                return _tool_result({"success": False, "error": "action is required", "scope": scope_key})
+            service_method = getattr(self.plugin.admin_service, self.admin_method)
+            data = await service_method(scope_key=scope_key, action=action, **kwargs)
+            if isinstance(data, dict):
+                data.setdefault("scope", scope_key)
+                data.setdefault("action", action)
+            return _tool_result(data)
+        except PermissionError as exc:
+            return _tool_result({"success": False, "error": str(exc), "scope": scope_key, "action": action})
+        except Exception as exc:
+            logger.warning("[memorix] %s tool failed: %s", self.name, exc, exc_info=True)
+            return _tool_result({"success": False, "error": str(exc), "scope": scope_key, "action": action})
+
+
+@dataclass
+class MemorixGraphAdminTool(MemorixAdminToolBase):
+    name: str = "memory_graph_admin"
+    description: str = "长期记忆图谱管理接口；仅 AstrBot 管理员可用。"
+    admin_method: str = "graph_admin"
+    parameters: dict = Field(default_factory=lambda: _admin_parameters("get_graph/search/node_detail/edge_detail/create_node/delete_node/rename_node/create_edge/delete_edge/update_edge_weight"))
+
+    async def call(self, context: ContextWrapper[AstrAgentContext], **kwargs) -> ToolExecResult:
+        if "source_node" in kwargs and "source" not in kwargs:
+            kwargs["source"] = kwargs.pop("source_node")
+        if "target_node" in kwargs and "target" not in kwargs:
+            kwargs["target"] = kwargs.pop("target_node")
+        return await self._call_admin(context, **kwargs)
+
+
+@dataclass
+class MemorixSourceAdminTool(MemorixAdminToolBase):
+    name: str = "memory_source_admin"
+    description: str = "长期记忆来源批次管理接口；仅 AstrBot 管理员可用。"
+    admin_method: str = "source_admin"
+    parameters: dict = Field(default_factory=lambda: _admin_parameters("list/delete/batch_delete"))
+
+    async def call(self, context: ContextWrapper[AstrAgentContext], **kwargs) -> ToolExecResult:
+        return await self._call_admin(context, **kwargs)
+
+
+@dataclass
+class MemorixEpisodeAdminTool(MemorixAdminToolBase):
+    name: str = "memory_episode_admin"
+    description: str = "Episode 管理接口；仅 AstrBot 管理员可用。"
+    admin_method: str = "episode_admin"
+    parameters: dict = Field(default_factory=lambda: _admin_parameters("query/list/get/status/rebuild/process_pending"))
+
+    async def call(self, context: ContextWrapper[AstrAgentContext], **kwargs) -> ToolExecResult:
+        return await self._call_admin(context, **kwargs)
+
+
+@dataclass
+class MemorixProfileAdminTool(MemorixAdminToolBase):
+    name: str = "memory_profile_admin"
+    description: str = "人物画像管理接口；仅 AstrBot 管理员可用。"
+    admin_method: str = "profile_admin"
+    parameters: dict = Field(default_factory=lambda: _admin_parameters("query/list/status/set_override/delete_override"))
+
+    async def call(self, context: ContextWrapper[AstrAgentContext], **kwargs) -> ToolExecResult:
+        return await self._call_admin(context, **kwargs)
+
+
+@dataclass
+class MemorixRuntimeAdminTool(MemorixAdminToolBase):
+    name: str = "memory_runtime_admin"
+    description: str = "长期记忆运行时管理接口；仅 AstrBot 管理员可用。"
+    admin_method: str = "runtime_admin"
+    parameters: dict = Field(default_factory=lambda: _admin_parameters("save/get_config/self_check/refresh_self_check/set_auto_save"))
+
+    async def call(self, context: ContextWrapper[AstrAgentContext], **kwargs) -> ToolExecResult:
+        return await self._call_admin(context, **kwargs)
+
+
+@dataclass
+class MemorixImportAdminTool(MemorixAdminToolBase):
+    name: str = "memory_import_admin"
+    description: str = "长期记忆导入管理接口；仅 AstrBot 管理员可用。"
+    admin_method: str = "import_admin"
+    parameters: dict = Field(default_factory=lambda: _admin_parameters("settings/get_guide/path_aliases/resolve_path/create_paste/create_raw_scan/list/get/chunks/cancel/retry_failed"))
+
+    async def call(self, context: ContextWrapper[AstrAgentContext], **kwargs) -> ToolExecResult:
+        return await self._call_admin(context, **kwargs)
+
+
+@dataclass
+class MemorixTuningAdminTool(MemorixAdminToolBase):
+    name: str = "memory_tuning_admin"
+    description: str = "长期记忆调优管理接口；仅 AstrBot 管理员可用，当前 AstrBot 运行时仅返回能力状态。"
+    admin_method: str = "tuning_admin"
+    parameters: dict = Field(default_factory=lambda: _admin_parameters("settings/get_profile/apply_profile/rollback_profile/export_profile/create_task/list_tasks/get_task/get_rounds/cancel/apply_best/get_report"))
+
+    async def call(self, context: ContextWrapper[AstrAgentContext], **kwargs) -> ToolExecResult:
+        return await self._call_admin(context, **kwargs)
+
+
+@dataclass
+class MemorixV5AdminTool(MemorixAdminToolBase):
+    name: str = "memory_v5_admin"
+    description: str = "长期记忆 V5 管理接口；仅 AstrBot 管理员可用。"
+    admin_method: str = "v5_admin"
+    parameters: dict = Field(default_factory=lambda: _admin_parameters("status/recycle_bin/restore/reinforce/weaken/remember_forever/forget"))
+
+    async def call(self, context: ContextWrapper[AstrAgentContext], **kwargs) -> ToolExecResult:
+        return await self._call_admin(context, **kwargs)
+
+
+@dataclass
+class MemorixDeleteAdminTool(MemorixAdminToolBase):
+    name: str = "memory_delete_admin"
+    description: str = "长期记忆删除管理接口；仅 AstrBot 管理员可用。"
+    admin_method: str = "delete_admin"
+    parameters: dict = Field(default_factory=lambda: _admin_parameters("preview/execute/restore"))
+
+    async def call(self, context: ContextWrapper[AstrAgentContext], **kwargs) -> ToolExecResult:
+        return await self._call_admin(context, **kwargs)
+
+
 def build_memorix_tools(plugin: Any) -> list[FunctionTool[AstrAgentContext]]:
     return [
         MemorixSearchTool(plugin=plugin),
@@ -457,4 +650,13 @@ def build_memorix_tools(plugin: Any) -> list[FunctionTool[AstrAgentContext]]:
         MemorixPersonProfileTool(plugin=plugin),
         MemorixMaintainTool(plugin=plugin),
         MemorixStatsTool(plugin=plugin),
+        MemorixGraphAdminTool(plugin=plugin),
+        MemorixSourceAdminTool(plugin=plugin),
+        MemorixEpisodeAdminTool(plugin=plugin),
+        MemorixProfileAdminTool(plugin=plugin),
+        MemorixRuntimeAdminTool(plugin=plugin),
+        MemorixImportAdminTool(plugin=plugin),
+        MemorixTuningAdminTool(plugin=plugin),
+        MemorixV5AdminTool(plugin=plugin),
+        MemorixDeleteAdminTool(plugin=plugin),
     ]

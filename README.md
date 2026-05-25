@@ -127,7 +127,8 @@ https://github.com/exynos967/astrbot_plugin_memorix
 本插件不再注册聊天命令，避免和 MaiBot 版工具调用路径产生双入口差异。
 
 - **日常记忆写入/召回**：由 LLM 工具自动调用 `search_memory`、`ingest_summary`、`ingest_text`、`get_person_profile`、`maintain_memory`、`memory_stats` 完成。
-- **图谱、检索、导入、总结、回收站、画像覆盖等管理操作**：在 AstrBot Dashboard 的插件详情页打开 `Memorix 控制台`。
+- **管理员记忆维护**：已注册与 MaiBot 对齐的管理工具 `memory_graph_admin`、`memory_source_admin`、`memory_episode_admin`、`memory_profile_admin`、`memory_runtime_admin`、`memory_import_admin`、`memory_tuning_admin`、`memory_v5_admin`、`memory_delete_admin`；这些工具仅 AstrBot 管理员事件可调用。
+- **图谱、检索、导入、总结、回收站、画像覆盖等管理操作**：可在 AstrBot Dashboard 的插件详情页打开 `Memorix 控制台`，也可由管理员通过上述管理工具让 LLM 执行。
 - **作用域、检索、生命周期、人物画像、定时总结等策略**：在 AstrBot 插件配置页修改 `_conf_schema.json` 暴露的配置项。
 
 ## 作用域模式
