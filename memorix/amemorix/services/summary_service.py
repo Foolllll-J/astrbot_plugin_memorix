@@ -360,10 +360,47 @@ class SummaryService:
         )
         if source_mode == "astrbot" and not summary_messages:
             return {"success": False, "message": "未找到可用的 AstrBot 会话历史"}
+
+        bot_name, personality_context = await self._resolve_bot_personality()
         ok, msg = await self.importer.import_from_transcript(
             session_id=session_id,
             messages=summary_messages,
             source=source,
             context_length=resolved_context_length,
+            bot_name=bot_name,
+            personality_context=personality_context,
         )
         return {"success": ok, "message": msg}
+
+    async def _resolve_bot_personality(self) -> tuple:
+        """从 AstrBot Context 获取当前 bot 名称和人设描述。"""
+        bot_name = str(self._cfg("summarization.bot_name", "") or "").strip()
+        personality_text = str(self._cfg("summarization.personality", "") or "").strip()
+        if bot_name and personality_text:
+            return bot_name, f"你的性格设定是：{personality_text}"
+
+        astrbot_ctx = self._resolve_astrbot_context()
+        if astrbot_ctx is None:
+            return bot_name or "助手", f"你的性格设定是：{personality_text}" if personality_text else ""
+
+        if not bot_name:
+            persona_manager = getattr(astrbot_ctx, "persona_manager", None)
+            if persona_manager is not None:
+                try:
+                    persona = await self._invoke_maybe_async(
+                        persona_manager.get_default_persona_v3
+                    )
+                    if persona is not None:
+                        bot_name = str(persona.get("name", "") or "").strip()
+                        if not personality_text:
+                            prompt_text = str(persona.get("prompt", "") or "").strip()
+                            if prompt_text and prompt_text != "You are a helpful and friendly assistant.":
+                                personality_text = prompt_text
+                except Exception:
+                    logger.debug("resolve bot personality from persona_manager failed", exc_info=True)
+
+        if not bot_name:
+            bot_name = "助手"
+
+        personality_context = f"你的性格设定是：{personality_text}" if personality_text else ""
+        return bot_name, personality_context

@@ -23,24 +23,30 @@ from ..storage import (
 logger = get_logger("A_Memorix.SummaryImporter")
 
 SUMMARY_PROMPT_TEMPLATE = """
-你需要对聊天记录进行结构化总结，并抽取关键实体与关系。
+你是 {bot_name}。{personality_context}
+现在你需要对以下一段聊天记录进行总结，并提取其中的重要知识。
 
-聊天记录：
+聊天记录内容：
 {chat_history}
 
-请输出严格 JSON：
+请完成以下任务：
+1. **生成总结**：以第三人称或机器人的视角，简洁明了地总结这段对话的主要内容、发生的事件或讨论的主题。
+2. **提取实体与关系**：识别并提取对话中提到的重要实体以及它们之间的关系。
+
+请严格以 JSON 格式输出，格式如下：
 {{
-  "summary": "对话总结",
-  "entities": ["实体1", "实体2"],
+  "summary": "总结文本内容",
+  "entities": ["张三", "李四"],
   "relations": [
-    {{"subject":"实体1","predicate":"关系","object":"实体2"}}
+    {{"subject": "张三", "predicate": "认识", "object": "李四"}}
   ]
 }}
 
-要求：
-1. 总结简洁、客观、可作为长期记忆。
-2. 实体与关系尽量使用原文措辞。
-3. 如果没有关系，relations 返回空数组。
+注意：
+1. 总结应具有叙事性，能够作为长程记忆的一部分。
+2. 直接使用实体的实际名称，不要使用 e1/e2 等代号。
+3. 实体与关系尽量使用原文措辞。
+4. 如果没有关系，relations 返回空数组。
 """
 
 
@@ -90,12 +96,22 @@ class SummaryImporter:
         merged = merged[:500]
         return {"summary": merged or "暂无可总结内容", "entities": [], "relations": []}
 
-    async def _generate_summary_payload(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+    async def _generate_summary_payload(
+        self,
+        messages: List[Dict[str, Any]],
+        *,
+        bot_name: str = "",
+        personality_context: str = "",
+    ) -> Dict[str, Any]:
         if not messages:
             return self._fallback_summary(messages)
 
         history = self._build_chat_text(messages)
-        prompt = SUMMARY_PROMPT_TEMPLATE.format(chat_history=history)
+        prompt = SUMMARY_PROMPT_TEMPLATE.format(
+            bot_name=bot_name or "助手",
+            personality_context=personality_context,
+            chat_history=history,
+        )
 
         if self.llm_client is None:
             return self._fallback_summary(messages)
@@ -127,6 +143,8 @@ class SummaryImporter:
         messages: List[Dict[str, Any]],
         source: str = "",
         context_length: Optional[int] = None,
+        bot_name: str = "",
+        personality_context: str = "",
     ) -> Tuple[bool, str]:
         try:
             session = self.metadata_store.upsert_transcript_session(
@@ -138,7 +156,11 @@ class SummaryImporter:
 
             limit = int(context_length) if context_length is not None else int(self._cfg("summarization.context_length", 50))
             transcript_messages = self.metadata_store.get_transcript_messages(session["session_id"], limit=max(1, limit))
-            payload = await self._generate_summary_payload(transcript_messages)
+            payload = await self._generate_summary_payload(
+                transcript_messages,
+                bot_name=bot_name,
+                personality_context=personality_context,
+            )
 
             summary = str(payload.get("summary", "") or "").strip()
             entities = payload.get("entities", [])
@@ -165,8 +187,11 @@ class SummaryImporter:
         stream_id: str,
         context_length: Optional[int] = None,
         include_personality: Optional[bool] = None,
+        bot_name: str = "",
+        personality_context: str = "",
     ) -> Tuple[bool, str]:
-        del include_personality
+        if include_personality is False:
+            personality_context = ""
         limit = int(context_length) if context_length is not None else int(self._cfg("summarization.context_length", 50))
         messages = self.metadata_store.get_transcript_messages(stream_id, limit=max(1, limit))
         if not messages:
@@ -176,6 +201,8 @@ class SummaryImporter:
             messages=messages,
             source=f"chat_summary:{stream_id}",
             context_length=limit,
+            bot_name=bot_name,
+            personality_context=personality_context,
         )
 
     async def _execute_import(
