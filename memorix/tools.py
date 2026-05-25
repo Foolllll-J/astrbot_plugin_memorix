@@ -188,7 +188,9 @@ class MemorixSearchTool(MemorixToolBase):
     name: str = "search_memory"
     description: str = (
         "搜索 Memorix 长期记忆。需要回忆用户偏好、历史对话、人物关系、时间线事件或已存事实时调用。"
-        "mode 可选 search/time/hybrid/episode/aggregate；工具结果会返回证据列表。"
+        "默认使用 mode=search。只有用户明确询问某个时间范围（如昨天、上周、某日期）时才使用 time/hybrid，"
+        "且 time/hybrid 必须至少提供 time_start 或 time_end，否则会按 MaiBot 行为返回参数错误，不会自动降级。"
+        "episode/aggregate 用于事件片段或聚合检索；工具结果会返回证据列表。"
         "命中数大于 0 时应基于证据回答；证据只说明对象被提到时，要说明只查到提及线索，不要编造。"
     )
     parameters: dict = Field(
@@ -199,13 +201,22 @@ class MemorixSearchTool(MemorixToolBase):
                 "limit": {"type": "integer", "description": "返回条数，默认 5，最大 50。"},
                 "mode": {
                     "type": "string",
-                    "description": "检索模式：search/time/hybrid/episode/aggregate。默认 search。",
+                    "description": (
+                        "检索模式。默认 search；没有时间条件时不要用 hybrid/time。"
+                        "time/hybrid 必须提供 time_start 或 time_end。"
+                    ),
                     "enum": ["search", "time", "hybrid", "episode", "aggregate"],
                 },
                 "chat_id": {"type": "string", "description": "聊天流/session_id；留空使用当前会话。"},
                 "person_id": {"type": "string", "description": "人物 ID 或关键词，可选。"},
-                "time_start": {"type": "string", "description": "起始时间，支持 YYYY-MM-DD/昨天/上周等。"},
-                "time_end": {"type": "string", "description": "结束时间，支持 YYYY-MM-DD/今天等。"},
+                "time_start": {
+                    "type": "string",
+                    "description": "起始时间，支持 YYYY-MM-DD/昨天/上周等；使用 mode=time/hybrid 时至少填它或 time_end。",
+                },
+                "time_end": {
+                    "type": "string",
+                    "description": "结束时间，支持 YYYY-MM-DD/今天等；使用 mode=time/hybrid 时至少填它或 time_start。",
+                },
                 "respect_filter": {"type": "boolean", "description": "是否限定当前聊天来源，默认 true。"},
                 "scope_key": {"type": "string", "description": "高级：显式指定 Memorix scope，通常留空。"},
             },

@@ -47,6 +47,18 @@ def test_build_memorix_tools_matches_maibot_core_names():
     assert names == EXPECTED_TOOL_NAMES
 
 
+def test_search_memory_tool_schema_guides_time_modes():
+    tools = build_memorix_tools(DummyPlugin())
+    search_tool = next(tool for tool in tools if tool.name == "search_memory")
+
+    assert "默认使用 mode=search" in search_tool.description
+    assert "time/hybrid 必须" in search_tool.description
+    assert "不会自动降级" in search_tool.description
+    assert "没有时间条件时不要用 hybrid/time" in search_tool.parameters["properties"]["mode"]["description"]
+    assert "至少填它或 time_end" in search_tool.parameters["properties"]["time_start"]["description"]
+    assert "至少填它或 time_start" in search_tool.parameters["properties"]["time_end"]["description"]
+
+
 def test_plugin_registers_and_removes_llm_tools():
     ctx = DummyContext()
     plugin = MemorixPlugin(ctx, {"scope": {"mode": "group_global"}})
