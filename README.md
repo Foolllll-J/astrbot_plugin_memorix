@@ -63,9 +63,9 @@
 - `/v1/readyz` 仪表盘状态中的 runtime self-check / queue 信息
 - source 严格过滤 + 空结果安全回退，避免跨群记忆误注入
 
-### 导入中心（可选启用）
+### 导入中心
 
-新增 Dashboard 内嵌导入视图（默认关闭，需手动在配置文件处开启 `web.import.enabled=true`）。页面可进行如下三种导入：
+Dashboard 内嵌导入视图默认启用。页面可进行如下三种导入：
 - 上传文件导入（`.txt/.md/.json`）
 - 粘贴文本导入
 - 原始目录扫描导入（`raw` / `plugin_data` 别名）
@@ -279,7 +279,6 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `web.import.enabled` | bool | `false` | 启用 Dashboard 内嵌导入视图与增强导入接口 |
 | `web.import.max_queue_size` | int | `20` | 导入任务队列上限 |
 | `web.import.max_files_per_task` | int | `200` | 单任务最大文件数 |
 | `web.import.max_file_size_mb` | int | `20` | 单文件大小上限（MB） |

@@ -207,7 +207,7 @@ class ImportTaskManager:
         return self.ctx.get_config(key, default)
 
     def is_enabled(self) -> bool:
-        return bool(self._cfg("web.import.enabled", False))
+        return True
 
     def _queue_limit(self) -> int:
         return max(1, _coerce_int(self._cfg("web.import.max_queue_size", 20), 20))

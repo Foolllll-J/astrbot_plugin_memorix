@@ -500,20 +500,13 @@
   "web": {
     "type": "object",
     "description": "导入中心 —— 通过 Web 界面批量导入外部知识到记忆系统",
-    "hint": "导入中心集成在 Dashboard 内嵌 WebUI 中，支持上传文件、粘贴文本和扫描目录三种方式导入外部知识。默认关闭，需手动开启。",
+    "hint": "导入中心集成在 Dashboard 内嵌 WebUI 中，支持上传文件、粘贴文本和扫描目录三种方式导入外部知识。",
     "items": {
       "import": {
         "type": "object",
         "description": "导入任务配置",
-        "hint": "控制导入中心的开关和各项限制。合理的限制可以防止单次导入任务占用过多资源。",
+        "hint": "控制导入中心的各项资源限制。合理的限制可以防止单次导入任务占用过多资源。",
         "items": {
-          "enabled": {
-            "type": "bool",
-            "description": "启用导入中心",
-            "hint": "开启后可通过 Dashboard 内嵌 WebUI 的导入视图和 /v1/import/* API 导入外部文件和文本到记忆系统。如果不需要导入外部知识，保持关闭即可。",
-            "default": false,
-            "obvious_hint": true
-          },
           "max_queue_size": {
             "type": "int",
             "description": "导入任务队列上限",

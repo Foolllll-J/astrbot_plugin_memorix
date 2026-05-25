@@ -31,7 +31,7 @@
 ## 页面入口
 
 - 页面入口：AstrBot Dashboard → 插件详情 → Memorix 控制台 → 导入
-- 默认关闭，需要配置：`web.import.enabled = true`
+- 默认启用，无需额外开启配置。
 
 ## 任务能力
 
@@ -78,7 +78,6 @@
 
 ## 配置项
 
-- `web.import.enabled`（默认 `false`）
 - `web.import.max_queue_size`
 - `web.import.max_files_per_task`
 - `web.import.max_file_size_mb`
