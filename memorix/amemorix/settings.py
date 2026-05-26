@@ -38,6 +38,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "top_k_relations": 10,
         "top_k_paragraphs": 20,
         "top_k_final": 10,
+        "auto_inject": {
+            "enabled": True,
+            "top_k": 5,
+            "min_query_chars": 4,
+        },
         "alpha": 0.5,
         "enable_ppr": True,
         "ppr_alpha": 0.85,
@@ -152,6 +157,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "active_window_hours": 72.0,
         "max_refresh_per_cycle": 50,
         "top_k_evidence": 12,
+        "injection_max_profiles": 3,
         "registry": {
             "page_size_default": 20,
             "page_size_max": 100,

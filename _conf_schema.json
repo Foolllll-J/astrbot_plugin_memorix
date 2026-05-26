@@ -113,6 +113,31 @@
         "hint": "每次 LLM 请求时，最终注入到上下文中的记忆条数上限。数值越大上下文越丰富，但会消耗更多 Token。建议范围 3~20。",
         "default": 10
       },
+      "auto_inject": {
+        "type": "object",
+        "description": "请求前自动注入",
+        "hint": "在每次 LLM 请求前自动检索当前聊天相关的长期记忆，并像 MaiBot 的内部参考一样附加到当前用户消息的额外内容中，避免破坏稳定 system prompt 缓存。命中为空时不会注入。",
+        "items": {
+          "enabled": {
+            "type": "bool",
+            "description": "启用自动注入长期记忆",
+            "hint": "开启后，机器人在回复前会根据当前消息自动查一次长期记忆；关闭后仍可通过 search_memory 工具按需检索。",
+            "default": true
+          },
+          "top_k": {
+            "type": "int",
+            "description": "自动注入条数",
+            "hint": "每次自动注入最多包含多少条记忆。建议 3~10，过大会增加上下文长度。",
+            "default": 5
+          },
+          "min_query_chars": {
+            "type": "int",
+            "description": "最短触发字数",
+            "hint": "当前消息少于该长度时不自动检索，避免“嗯”“哈哈”等低信息量消息触发无意义召回。",
+            "default": 4
+          }
+        }
+      },
       "enable_ppr": {
         "type": "bool",
         "description": "启用 PageRank 图谱重排",
@@ -274,6 +299,12 @@
         "description": "生成画像时参考多少条记忆",
         "hint": "生成用户画像时，从记忆库里取多少条相关记忆作为参考材料。越多画像越全面，但也越费 Token。建议 5~20。",
         "default": 12
+      },
+      "injection_max_profiles": {
+        "type": "int",
+        "description": "画像注入上限",
+        "hint": "每次 LLM 请求前最多注入多少个人物画像。群聊中会优先包含当前发送者，并尝试包含被 @ 或被回复的人物。",
+        "default": 3
       }
     }
   },

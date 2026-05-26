@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from astrbot_plugin_memorix.main import MemorixPlugin
+from astrbot_plugin_memorix.main import MEMORY_INJECTION_MARKER, MemorixPlugin
 from astrbot_plugin_memorix.memorix.amemorix.context import AppContext
 from astrbot_plugin_memorix.memorix.amemorix.services.query_service import QueryService
 from astrbot_plugin_memorix.memorix.core.storage.metadata_store import MetadataStore
@@ -14,6 +14,7 @@ from astrbot_plugin_memorix.memorix.services.person_fact_writeback_service impor
     PersonFactWritebackService,
 )
 from astrbot_plugin_memorix.memorix.tools import _format_search_result_for_llm, build_memorix_tools
+from astrbot_plugin_memorix.memorix.utils.profile_injection import build_profile_injection_text
 
 
 class DummyContext:
@@ -33,6 +34,112 @@ class DummyPlugin:
     def _resolve_scope(self, event):
         del event
         return "group:test"
+
+
+class _FakeMessageObj:
+    session_id = "session-1"
+    message_id = "msg-current"
+    timestamp = 123
+    message = []
+
+
+class _FakeEvent:
+    unified_msg_origin = "aiocqhttp:GroupMessage:group-1"
+    message_obj = _FakeMessageObj()
+    message_str = "我喜欢什么游戏？"
+
+    def get_platform_name(self):
+        return "aiocqhttp"
+
+    def get_sender_id(self):
+        return "user-1"
+
+    def get_sender_name(self):
+        return "小明"
+
+    def get_group_id(self):
+        return "group-1"
+
+    def get_self_id(self):
+        return "bot-1"
+
+
+class _FakeAt:
+    type = "At"
+    qq = "user-2"
+    name = "小红"
+
+
+class _FakeReply:
+    type = "Reply"
+    sender_id = "user-3"
+    sender_nickname = "小蓝"
+
+
+class _FakeGroupMessageObj(_FakeMessageObj):
+    message = [_FakeAt(), _FakeReply()]
+
+
+class _FakeGroupEvent(_FakeEvent):
+    message_obj = _FakeGroupMessageObj()
+
+
+class _FakeProfileService:
+    def __init__(self):
+        self.upsert_calls = []
+        self.query_calls = []
+
+    async def is_injection_enabled(self, **kwargs):
+        del kwargs
+        return True
+
+    async def upsert_registry_from_event(self, **kwargs):
+        self.upsert_calls.append(kwargs)
+        return {"success": True}
+
+    async def query(self, **kwargs):
+        self.query_calls.append(kwargs)
+        names = {
+            "aiocqhttp:user-1": "小明",
+            "aiocqhttp:user-2": "小红",
+            "aiocqhttp:user-3": "小蓝",
+        }
+        name = names.get(kwargs["person_id"], kwargs["person_id"])
+        return {
+            "success": True,
+            "person_id": kwargs["person_id"],
+            "person_name": name,
+            "profile_text": f"{name}喜欢深夜玩 RPG，也常聊游戏偏好。",
+        }
+
+
+class _FakeQueryService:
+    def __init__(self):
+        self.calls = []
+
+    async def auto_search(self, **kwargs):
+        self.calls.append(kwargs)
+        return {
+            "query_type": "search",
+            "query": kwargs["query"],
+            "count": 2,
+            "results": [
+                {
+                    "hash": "current",
+                    "type": "paragraph",
+                    "score": 1.0,
+                    "content": "当前消息不应被注入。",
+                    "metadata": {"message_id": "msg-current"},
+                },
+                {
+                    "hash": "old",
+                    "type": "paragraph",
+                    "score": 0.7,
+                    "content": "小明之前说自己喜欢 RPG。",
+                    "metadata": {"message_id": "msg-old"},
+                },
+            ],
+        }
 
 
 EXPECTED_TOOL_NAMES = [
@@ -83,6 +190,145 @@ def test_plugin_registers_and_removes_llm_tools():
 
     plugin._remove_llm_tools()
     assert ctx.removed == [tool.name for tool in ctx.added]
+
+
+def test_llm_request_injects_profile_and_auto_memory():
+    plugin = MemorixPlugin(
+        DummyContext(),
+        {
+            "scope": {"mode": "group_global"},
+            "retrieval": {"top_k_final": 10, "auto_inject": {"enabled": True, "top_k": 5}},
+            "person_profile": {"enabled": True},
+        },
+    )
+    plugin.profile_service = _FakeProfileService()
+    plugin.query_service = _FakeQueryService()
+
+    async def _enabled(_adapted, _user_id=""):
+        return True
+
+    plugin._is_adapted_chat_enabled = _enabled
+    request = SimpleNamespace(prompt="我喜欢什么游戏？", system_prompt="原始系统提示", extra_user_content_parts=[])
+
+    asyncio.run(plugin.on_llm_request(_FakeEvent(), request))
+
+    assert request.system_prompt == "原始系统提示"
+    assert len(request.extra_user_content_parts) == 1
+    injected_text = request.extra_user_content_parts[0].text
+    assert MEMORY_INJECTION_MARKER in injected_text
+    assert "【人物画像-内部参考】" in injected_text
+    assert "小明喜欢深夜玩 RPG" in injected_text
+    assert "【长期记忆-自动检索】" in injected_text
+    assert "小明之前说自己喜欢 RPG" in injected_text
+    assert "当前消息不应被注入" not in injected_text
+
+    assert plugin.query_service.calls[0]["scope_key"] == "aiocqhttp:group:group-1"
+    assert plugin.query_service.calls[0]["stream_id"] == "session-1"
+    assert plugin.query_service.calls[0]["source"] == "chat:aiocqhttp:session-1"
+    assert plugin.query_service.calls[0]["strict_source"] is True
+    assert plugin.query_service.calls[0]["enforce_chat_filter"] is True
+
+
+def test_llm_request_profile_injection_collects_at_and_reply_candidates():
+    plugin = MemorixPlugin(
+        DummyContext(),
+        {
+            "scope": {"mode": "group_global"},
+            "retrieval": {"auto_inject": {"enabled": False}},
+            "person_profile": {"enabled": True, "injection_max_profiles": 3},
+        },
+    )
+    plugin.profile_service = _FakeProfileService()
+    plugin.query_service = _FakeQueryService()
+
+    async def _enabled(_adapted, _user_id=""):
+        return True
+
+    plugin._is_adapted_chat_enabled = _enabled
+    request = SimpleNamespace(prompt="帮我看看大家喜欢什么", system_prompt="", extra_user_content_parts=[])
+
+    asyncio.run(plugin.on_llm_request(_FakeGroupEvent(), request))
+
+    injected_text = request.extra_user_content_parts[0].text
+    assert "来源: recent_speaker" in injected_text
+    assert "来源: at_user" in injected_text
+    assert "来源: reply_sender" in injected_text
+    assert "小明喜欢深夜玩 RPG" in injected_text
+    assert "小红喜欢深夜玩 RPG" in injected_text
+    assert "小蓝喜欢深夜玩 RPG" in injected_text
+    assert [call["person_id"] for call in plugin.profile_service.query_calls] == [
+        "aiocqhttp:user-1",
+        "aiocqhttp:user-2",
+        "aiocqhttp:user-3",
+    ]
+
+
+def test_profile_injection_text_compacts_structured_profile():
+    text = build_profile_injection_text(
+        "\n".join(
+            [
+                "# 人物画像",
+                "人物ID: aiocqhttp:user-1",
+                "主称呼: 小明",
+                "",
+                "## 身份设定",
+                "- 学生",
+                "",
+                "## 关系设定",
+                "- 和机器人熟悉",
+                "",
+                "## 稳定了解",
+                "- 喜欢 RPG",
+                "",
+                "## 相处偏好",
+                "- 喜欢直接建议",
+                "",
+                "## 近期互动",
+                "- 昨天聊过显卡",
+                "- 今天聊过游戏",
+                "- 过旧的近期互动",
+                "",
+                "## 不确定信息",
+                "- 可能喜欢 FPS",
+                "",
+                "## 维护备注",
+                "- 自动画像仅供内部参考",
+            ]
+        )
+    )
+
+    assert "## 身份设定" in text
+    assert "- 喜欢 RPG" in text
+    assert "- 今天聊过游戏" in text
+    assert "过旧的近期互动" not in text
+    assert "## 不确定信息" not in text
+    assert "## 维护备注" not in text
+
+
+def test_llm_request_injection_respects_chat_filter():
+    plugin = MemorixPlugin(
+        DummyContext(),
+        {
+            "scope": {"mode": "group_global"},
+            "retrieval": {"auto_inject": {"enabled": True}},
+            "person_profile": {"enabled": True},
+        },
+    )
+    plugin.profile_service = _FakeProfileService()
+    plugin.query_service = _FakeQueryService()
+
+    async def _disabled(_adapted, _user_id=""):
+        return False
+
+    plugin._is_adapted_chat_enabled = _disabled
+    request = SimpleNamespace(prompt="我喜欢什么游戏？", system_prompt="原始系统提示", extra_user_content_parts=[])
+
+    asyncio.run(plugin.on_llm_request(_FakeEvent(), request))
+
+    assert request.system_prompt == "原始系统提示"
+    assert request.extra_user_content_parts == []
+    assert plugin.profile_service.query_calls == []
+    assert plugin.query_service.calls == []
 
 
 def test_search_memory_result_is_formatted_for_llm():
