@@ -286,8 +286,8 @@
       "source_mode": {
         "type": "string",
         "description": "总结数据来源模式",
-        "hint": "transcript：仅使用插件自身记录的消息转录，完全独立于 AstrBot 会话系统；astrbot：仅使用 AstrBot 原生会话历史记录；hybrid（推荐）：优先使用 AstrBot 会话历史，失败时自动回退到插件转录。推荐使用 hybrid 以获得最佳兼容性。",
-        "default": "hybrid",
+        "hint": "transcript（推荐）：仅使用插件自身记录的消息转录，完全独立于 AstrBot 会话系统，更接近 MaiBot 的消息仓库总结方式；astrbot：仅使用 AstrBot 原生会话历史记录；hybrid：优先使用 AstrBot 会话历史，失败时自动回退到插件转录。",
+        "default": "transcript",
         "options": [
           "transcript",
           "astrbot",

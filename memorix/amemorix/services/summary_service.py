@@ -78,9 +78,9 @@ class SummaryService:
 
     @staticmethod
     def _normalize_source_mode(raw: Any) -> str:
-        mode = str(raw or "hybrid").strip().lower()
+        mode = str(raw or "transcript").strip().lower()
         if mode not in {"transcript", "astrbot", "hybrid"}:
-            return "hybrid"
+            return "transcript"
         return mode
 
     @staticmethod
@@ -304,7 +304,7 @@ class SummaryService:
         if normalized:
             return normalized[-max(1, context_length) :]
 
-        mode = self._normalize_source_mode(self._cfg("summarization.source_mode", "hybrid"))
+        mode = self._normalize_source_mode(self._cfg("summarization.source_mode", "transcript"))
         if mode in {"astrbot", "hybrid"}:
             astrbot_messages = await self._fetch_astrbot_messages(
                 session_id=session_id,
@@ -342,7 +342,7 @@ class SummaryService:
         persist_messages: bool = False,
     ) -> Dict[str, Any]:
         resolved_context_length = max(1, int(context_length))
-        source_mode = self._normalize_source_mode(self._cfg("summarization.source_mode", "hybrid"))
+        source_mode = self._normalize_source_mode(self._cfg("summarization.source_mode", "transcript"))
         summary_messages = await self._resolve_summary_messages(
             session_id=session_id,
             incoming_messages=messages,
