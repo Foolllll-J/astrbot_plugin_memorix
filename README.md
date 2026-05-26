@@ -9,7 +9,7 @@
 图谱 + 向量混合检索 · 记忆生命周期管理 · 人物画像 · 总结导入 · 内嵌 WebUI
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.16-blue)](https://github.com/Soulter/AstrBot)
-[![Version](https://img.shields.io/badge/version-v0.9.0-green)]()
+[![Version](https://img.shields.io/badge/version-v0.9.1-green)]()
 [![Platforms](https://img.shields.io/badge/platforms-QQ%20%7C%20Telegram%20%7C%20Discord-orange)]()
 
 </div>
@@ -78,9 +78,7 @@ Dashboard 内嵌导入视图默认启用。页面可进行如下三种导入：
 
 导入中心支持手动选择 `knowledge_type`（`auto/factual/narrative/structured/mixed`），并提供任务级/文件级/分块级状态观察、任务取消与失败重试。
 
-### A_memorix 服务层同步
-
-本插件基于 A_Dawn 的 A_Memorix 设计理念开发，同步了 API-first 服务层架构，插件侧保留 AstrBot 生命周期、Provider、scope/source 隔离与 NapCat/OneBot 事件适配。
+#### 本插件基于 A_Dawn 的 A_Memorix 设计理念开发，插件侧保留 AstrBot 生命周期、Provider、scope/source 隔离与 NapCat/OneBot 事件适配。
 
 ## 工作流
 
@@ -116,13 +114,9 @@ Dashboard 内嵌导入视图默认启用。页面可进行如下三种导入：
 https://github.com/exynos967/astrbot_plugin_memorix
 ```
 
-### 最小配置（零配置即可运行）
-
-插件安装后**无需任何配置**即可启动。默认使用本地 embedding 回退，所有功能可用。
-
 ### 推荐配置（启用独立 Embedding）
 
-聊天模型可选指定 AstrBot 已定义 Provider；Embedding 在插件内独立配置 OpenAI-compatible 端点：
+聊天模型可选指定 AstrBot 已定义 Provider；Embedding 在插件内独立配置 OpenAI 端点：
 
 | 配置项 | 值 | 说明 |
 |---|---|---|
@@ -134,12 +128,10 @@ https://github.com/exynos967/astrbot_plugin_memorix
 
 ## 使用方式
 
-本插件不再注册聊天命令，避免和 MaiBot 版工具调用路径产生双入口差异。
-
-- **日常记忆写入/召回**：请求前会自动注入当前聊天相关的长期记忆和人物画像（附加到当前用户消息的额外内容，不改写稳定 system prompt）；LLM 也可继续通过 `search_memory`、`get_person_profile` 等工具按需补查，通过 `ingest_summary`、`ingest_text`、`maintain_memory`、`memory_stats` 写入或维护记忆。
-- **管理员记忆维护**：已注册与 MaiBot 对齐的管理工具 `memory_graph_admin`、`memory_source_admin`、`memory_episode_admin`、`memory_profile_admin`、`memory_runtime_admin`、`memory_import_admin`、`memory_tuning_admin`、`memory_v5_admin`、`memory_delete_admin`；这些工具仅 AstrBot 管理员事件可调用。
+- **日常记忆写入/召回**：请求前会自动注入当前聊天相关的长期记忆和人物画像；LLM 也可继续通过 `search_memory`、`get_person_profile` 等工具按需补查，通过 `ingest_summary`、`ingest_text`、`maintain_memory`、`memory_stats` 写入或维护记忆。
+- **管理员记忆维护**：已注册的管理工具 `memory_graph_admin`、`memory_source_admin`、`memory_episode_admin`、`memory_profile_admin`、`memory_runtime_admin`、`memory_import_admin`、`memory_tuning_admin`、`memory_v5_admin`、`memory_delete_admin`；这些工具仅 AstrBot 管理员事件可调用。
 - **图谱、检索、导入、总结、回收站、画像覆盖等管理操作**：可在 AstrBot Dashboard 的插件详情页打开 `Memorix 控制台`，也可由管理员通过上述管理工具让 LLM 执行。
-- **作用域、检索、生命周期、人物画像、自动总结等策略**：在 AstrBot 插件配置页修改 `_conf_schema.json` 暴露的配置项。
+- **作用域、检索、生命周期、人物画像、自动总结等策略**：在 AstrBot 插件配置页修改配置项。
 
 ## 作用域模式
 
@@ -149,7 +141,7 @@ https://github.com/exynos967/astrbot_plugin_memorix
 |---|---|---|
 | `platform_global` | 同平台所有会话共享 | 希望机器人跨群/跨会话保持记忆连续性 |
 | `user_global` | 同平台按用户隔离 | 需要用户级隐私隔离 |
-| `group_global` | 同平台按群隔离，私聊退化为用户隔离 **（默认）** | 以群为单位沉淀独立记忆，降低串群污染 |
+| `group_global` | 同平台按群隔离，私聊退化为用户隔离 | 以群为单位沉淀独立记忆，降低串群污染 |
 | `umo` | 按 `unified_msg_origin` 最细粒度隔离 | 最严格的隔离需求 |
 
 ## 存储架构
@@ -223,7 +215,7 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `embedding.enabled` | bool | `false` | 启用插件内 OpenAI-compatible embedding（关闭则本地回退） |
+| `embedding.enabled` | bool | `false` | 启用插件内 OpenAI embedding（关闭则本地回退） |
 | `embedding.dimension` | int | `1024` | 向量维度 |
 | `embedding.batch_size` | int | `32` | 批量请求大小 |
 | `embedding.max_concurrent` | int | `5` | 最大并发请求数 |
@@ -395,7 +387,7 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 <details>
 <summary>如何只让部分群使用记忆功能？</summary>
 
-启用聊天过滤功能，将 `filter.mode` 设为 `whitelist`（白名单），然后在 `filter.chats` 中填写允许的群号，格式如 `group:123456`。不在列表中的群聊将不会触发记忆记录和检索。
+启用聊天过滤功能。
 
 </details>
 
