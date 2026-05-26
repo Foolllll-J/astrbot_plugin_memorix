@@ -4,3 +4,6 @@ tests/
 # Python cache files
 __pycache__/
 *.py[cod]
+
+# uv local lock file
+uv.lock
