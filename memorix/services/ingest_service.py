@@ -60,6 +60,7 @@ class IngestService:
         source: str,
         user_id: str,
         group_id: str,
+        group_name: str,
         platform: str,
         unified_msg_origin: str,
         sender_name: str,
@@ -94,6 +95,7 @@ class IngestService:
             "sender_id": str(user_id or "").strip(),
             "sender_name": str(sender_name or "").strip(),
             "group_id": str(group_id or "").strip(),
+            "group_name": str(group_name or "").strip(),
             "platform": str(platform or "").strip(),
             "unified_msg_origin": str(unified_msg_origin or "").strip(),
             "message_id": str(message_id or "").strip(),
@@ -164,6 +166,7 @@ class IngestService:
         source: str,
         user_id: str = "",
         group_id: str = "",
+        group_name: str = "",
         platform: str = "",
         unified_msg_origin: str = "",
         sender_name: str = "",
@@ -201,6 +204,7 @@ class IngestService:
                 "session_id": session,
                 "user_id": str(user_id or "").strip(),
                 "group_id": str(group_id or "").strip(),
+                "group_name": str(group_name or "").strip(),
                 "platform": str(platform or "").strip(),
             },
         )
@@ -227,6 +231,7 @@ class IngestService:
                 "scope_key": scope_key,
                 "user_id": str(user_id or "").strip(),
                 "group_id": str(group_id or "").strip(),
+                "group_name": str(group_name or "").strip(),
                 "platform": str(platform or "").strip(),
                 "unified_msg_origin": str(unified_msg_origin or "").strip(),
             },
@@ -239,6 +244,7 @@ class IngestService:
             "sender_name": str(sender_name or "").strip(),
             "sender_id": str(user_id or "").strip(),
             "group_id": str(group_id or "").strip(),
+            "group_name": str(group_name or "").strip(),
             "platform": str(platform or "").strip(),
             "session_id": session,
             "unified_msg_origin": str(unified_msg_origin or "").strip(),
@@ -247,7 +253,7 @@ class IngestService:
         }
         filtered_meta = {key: value for key, value in msg_meta.items() if value}
         if filtered_meta:
-            msg_record["metadata"] = filtered_meta
+            msg_record.update(filtered_meta)
         transcript_stored = False
         if route.store_transcript:
             ctx.metadata_store.append_transcript_messages(
@@ -266,6 +272,7 @@ class IngestService:
                 source=source,
                 user_id=user_id,
                 group_id=group_id,
+                group_name=group_name,
                 platform=platform,
                 unified_msg_origin=unified_msg_origin,
                 sender_name=sender_name,

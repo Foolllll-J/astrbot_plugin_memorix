@@ -2475,7 +2475,9 @@ class MetadataStore:
         Returns:
             段落列表
         """
-        return self.query("SELECT * FROM paragraphs WHERE source = ?", (source,))
+        cursor = self._conn.cursor()
+        cursor.execute("SELECT * FROM paragraphs WHERE source = ?", (source,))
+        return [self._row_to_dict(row, "paragraph") for row in cursor.fetchall()]
 
     def get_all_sources(self) -> List[Dict[str, Any]]:
         """
@@ -3151,6 +3153,17 @@ class MetadataStore:
             "created_at": now,
             "updated_at": now,
         }
+
+    def get_transcript_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Return one transcript session by session_id."""
+        self._ensure_transcript_schema()
+        token = str(session_id or "").strip()
+        if not token:
+            return None
+        cursor = self._conn.cursor()
+        cursor.execute("SELECT * FROM transcript_sessions WHERE session_id = ? LIMIT 1", (token,))
+        row = cursor.fetchone()
+        return self._transcript_session_row_to_dict(row) if row else None
 
     def append_transcript_messages(
         self,

@@ -91,6 +91,16 @@ class SummaryImporter:
             lines.append(f"{role}: {content}")
         return "\n".join(lines)
 
+    def _transcript_session_metadata(self, session_id: str) -> Dict[str, Any]:
+        getter = getattr(self.metadata_store, "get_transcript_session", None)
+        if not callable(getter):
+            return {}
+        session = getter(session_id)
+        if not isinstance(session, dict):
+            return {}
+        metadata = session.get("metadata")
+        return dict(metadata) if isinstance(metadata, dict) else {}
+
     def _fallback_summary(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
         merged = " ".join(str(m.get("content", "") or "").strip() for m in messages if str(m.get("content", "")).strip())
         merged = merged[:500]
@@ -147,10 +157,12 @@ class SummaryImporter:
         personality_context: str = "",
     ) -> Tuple[bool, str]:
         try:
+            session_metadata = self._transcript_session_metadata(session_id)
+            session_metadata["imported_at"] = time.time()
             session = self.metadata_store.upsert_transcript_session(
                 session_id=session_id,
                 source=source or f"transcript:{session_id}",
-                metadata={"imported_at": time.time()},
+                metadata=session_metadata,
             )
             self.metadata_store.append_transcript_messages(session_id=session["session_id"], messages=messages)
 
@@ -215,10 +227,14 @@ class SummaryImporter:
     ) -> None:
         type_str = self._cfg("summarization.default_knowledge_type", "narrative")
         knowledge_type = get_knowledge_type_from_string(type_str) or KnowledgeType.NARRATIVE
+        metadata = self._transcript_session_metadata(stream_id)
+        metadata.update({"source_type": "chat_summary", "chat_id": stream_id})
+        metadata = {key: value for key, value in metadata.items() if value not in (None, "", [])}
 
         hash_value = self.metadata_store.add_paragraph(
             content=summary,
             source=f"chat_summary:{stream_id}",
+            metadata=metadata,
             knowledge_type=knowledge_type.value,
             time_meta=time_meta,
         )

@@ -25,6 +25,7 @@ class PersonFactWritebackItem:
     assistant_text: str
     user_id: str = ""
     group_id: str = ""
+    group_name: str = ""
     platform: str = ""
     sender_name: str = ""
     message_id: str = ""
@@ -334,6 +335,7 @@ class PersonFactWritebackService:
             "sender_id": item.user_id,
             "sender_name": item.sender_name,
             "group_id": item.group_id,
+            "group_name": item.group_name,
             "platform": item.platform,
             "message_id": item.message_id,
             "evidence_text": self._truncate(item.user_text, self._max_evidence_chars()),

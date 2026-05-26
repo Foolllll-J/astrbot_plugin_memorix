@@ -114,6 +114,7 @@ class SummaryService:
             "sender_name",
             "sender_id",
             "group_id",
+            "group_name",
             "platform",
             "session_id",
             "unified_msg_origin",
@@ -235,6 +236,7 @@ class SummaryService:
         defaults = {
             "session_id": str(session_id or "").strip(),
             "group_id": str(metadata.get("group_id", "") or "").strip(),
+            "group_name": str(metadata.get("group_name", "") or "").strip(),
             "platform": str(metadata.get("platform", "") or "").strip(),
             "unified_msg_origin": str(metadata.get("unified_msg_origin", "") or "").strip(),
         }

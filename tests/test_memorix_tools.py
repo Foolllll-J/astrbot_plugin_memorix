@@ -4,9 +4,11 @@ from types import SimpleNamespace
 import numpy as np
 
 from astrbot_plugin_memorix.main import MEMORY_INJECTION_MARKER, MemorixPlugin
+from astrbot_plugin_memorix.memorix.adapters.astrbot_event_adapter import AstrbotEventAdapter
 from astrbot_plugin_memorix.memorix.amemorix.context import AppContext
 from astrbot_plugin_memorix.memorix.amemorix.services.query_service import QueryService
 from astrbot_plugin_memorix.memorix.core.storage.metadata_store import MetadataStore
+from astrbot_plugin_memorix.memorix.core.utils.summary_importer import SummaryImporter
 from astrbot_plugin_memorix.memorix.services.ingest_service import IngestService
 from astrbot_plugin_memorix.memorix.services.content_router import MemoryContentRouter
 from astrbot_plugin_memorix.memorix.services.person_fact_writeback_service import (
@@ -41,6 +43,7 @@ class _FakeMessageObj:
     message_id = "msg-current"
     timestamp = 123
     message = []
+    group = SimpleNamespace(group_id="group-1", group_name="测试群")
 
 
 class _FakeEvent:
@@ -192,6 +195,13 @@ def test_plugin_registers_and_removes_llm_tools():
     assert ctx.removed == [tool.name for tool in ctx.added]
 
 
+def test_astrbot_event_adapter_extracts_group_name():
+    adapted = AstrbotEventAdapter.from_event(_FakeEvent(), "aiocqhttp:group:group-1")
+
+    assert adapted.group_id == "group-1"
+    assert adapted.group_name == "测试群"
+
+
 def test_llm_request_injects_profile_and_auto_memory():
     plugin = MemorixPlugin(
         DummyContext(),
@@ -227,6 +237,7 @@ def test_llm_request_injects_profile_and_auto_memory():
     assert plugin.query_service.calls[0]["source"] == "chat:aiocqhttp:session-1"
     assert plugin.query_service.calls[0]["strict_source"] is True
     assert plugin.query_service.calls[0]["enforce_chat_filter"] is True
+    assert plugin.profile_service.upsert_calls[0]["group_name"] == "测试群"
 
 
 def test_llm_request_profile_injection_collects_at_and_reply_candidates():
@@ -460,6 +471,8 @@ def test_person_fact_writeback_stores_paragraph_and_registry_points(tmp_path):
             user_text="我喜欢深夜打游戏",
             assistant_text="我记住了你喜欢深夜打游戏。",
             user_id="u1",
+            group_id="g1",
+            group_name="测试群",
             platform="qq",
             sender_name="小明",
             message_id="m1",
@@ -474,6 +487,7 @@ def test_person_fact_writeback_stores_paragraph_and_registry_points(tmp_path):
         paragraphs = metadata_store.get_paragraphs_by_source("person_fact:s1:qq:u1")
         assert len(paragraphs) == 1
         assert "小明喜欢深夜打游戏" in paragraphs[0]["content"]
+        assert paragraphs[0]["metadata"]["group_name"] == "测试群"
     finally:
         metadata_store.close()
 
@@ -534,6 +548,84 @@ def test_ingest_message_respects_chat_filter_before_storage():
     assert result["skipped"] is True
     assert result["reason"] == "chat_filtered"
     assert result["result"]["transcript"]["stored"] is False
+
+
+def test_ingest_message_records_group_name_in_transcript_metadata(tmp_path):
+    metadata_store = MetadataStore(tmp_path)
+    metadata_store.connect()
+    try:
+        ctx = SimpleNamespace(metadata_store=metadata_store)
+        service = IngestService(
+            _FakeRuntimeManager(ctx),
+            {"ingest": {"memory_write_mode": "transcript_only", "skip_empty_text": True}},
+        )
+
+        result = asyncio.run(
+            service.ingest_message(
+                scope_key="default",
+                session_id="s1",
+                role="user",
+                content="今天聊 RPG",
+                source="chat:test:s1",
+                user_id="u1",
+                group_id="g1",
+                group_name="测试群",
+                platform="qq",
+                unified_msg_origin="qq:GroupMessage:g1",
+            )
+        )
+
+        assert result["result"]["transcript"]["stored"] is True
+        session = metadata_store.get_transcript_session("s1")
+        assert session["metadata"]["group_name"] == "测试群"
+        messages = metadata_store.get_transcript_messages("s1")
+        assert messages[0]["metadata"]["group_name"] == "测试群"
+    finally:
+        metadata_store.close()
+
+
+def test_summary_importer_preserves_group_name_metadata(tmp_path):
+    metadata_store = MetadataStore(tmp_path)
+    metadata_store.connect()
+    try:
+        metadata_store.upsert_transcript_session(
+            session_id="s1",
+            source="chat:test:s1",
+            metadata={
+                "group_id": "g1",
+                "group_name": "测试群",
+                "platform": "qq",
+                "unified_msg_origin": "qq:GroupMessage:g1",
+            },
+        )
+        metadata_store.append_transcript_messages(
+            session_id="s1",
+            messages=[{"role": "user", "content": "今天聊 RPG"}],
+        )
+        importer = SummaryImporter(
+            vector_store=_FakeVectorStore(),
+            graph_store=_FakeGraphStore(),
+            metadata_store=metadata_store,
+            embedding_manager=_FakeEmbeddingManager(),
+            plugin_config={"summarization": {"default_knowledge_type": "narrative"}},
+            llm_client=None,
+        )
+
+        ok, message = asyncio.run(
+            importer.import_from_transcript(
+                session_id="s1",
+                messages=[],
+                source="chat_summary:s1",
+                context_length=5,
+            )
+        )
+
+        assert ok is True, message
+        assert metadata_store.get_transcript_session("s1")["metadata"]["group_name"] == "测试群"
+        paragraphs = metadata_store.get_paragraphs_by_source("chat_summary:s1")
+        assert paragraphs[0]["metadata"]["group_name"] == "测试群"
+    finally:
+        metadata_store.close()
 
 
 def test_person_fact_writeback_respects_chat_filter():

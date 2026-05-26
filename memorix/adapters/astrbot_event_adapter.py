@@ -14,12 +14,35 @@ class MemorixEvent:
     sender_id: str
     sender_name: str
     group_id: str
+    group_name: str
     message_id: str
     message_text: str
     timestamp: int
 
 
 class AstrbotEventAdapter:
+    @staticmethod
+    def _clean_text(value) -> str:
+        text = str(value or "").strip()
+        if text.upper() == "N/A":
+            return ""
+        return text
+
+    @classmethod
+    def _group_name_from_event(cls, message_obj) -> str:
+        group = getattr(message_obj, "group", None)
+        group_name = cls._clean_text(getattr(group, "group_name", ""))
+        if group_name:
+            return group_name
+
+        raw_message = getattr(message_obj, "raw_message", None)
+        getter = getattr(raw_message, "get", None)
+        if callable(getter):
+            group_name = cls._clean_text(getter("group_name", ""))
+            if group_name:
+                return group_name
+        return cls._clean_text(getattr(raw_message, "group_name", ""))
+
     @staticmethod
     def from_event(event, scope_key: str) -> MemorixEvent:
         platform = str(getattr(event, "get_platform_name", lambda: "unknown")() or "unknown")
@@ -29,6 +52,7 @@ class AstrbotEventAdapter:
         sender_id = str(getattr(event, "get_sender_id", lambda: "")() or "")
         sender_name = str(getattr(event, "get_sender_name", lambda: "")() or "")
         group_id = str(getattr(event, "get_group_id", lambda: "")() or "")
+        group_name = AstrbotEventAdapter._group_name_from_event(message_obj)
         message_id = str(getattr(message_obj, "message_id", "") or "")
         message_text = str(getattr(event, "message_str", "") or "").strip()
         timestamp = int(getattr(message_obj, "timestamp", 0) or 0)
@@ -40,6 +64,7 @@ class AstrbotEventAdapter:
             sender_id=sender_id,
             sender_name=sender_name,
             group_id=group_id,
+            group_name=group_name,
             message_id=message_id,
             message_text=message_text,
             timestamp=timestamp,
