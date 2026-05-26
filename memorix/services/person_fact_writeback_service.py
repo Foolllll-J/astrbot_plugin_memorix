@@ -153,6 +153,19 @@ class PersonFactWritebackService:
     async def _handle_item(self, item: PersonFactWritebackItem) -> None:
         runtime = await self.runtime_manager.get_runtime(item.scope_key)
         ctx = runtime.context
+        checker = getattr(ctx, "is_chat_enabled", None)
+        if callable(checker) and not checker(
+            stream_id=item.session_id,
+            group_id=item.group_id,
+            user_id=item.user_id,
+        ):
+            logger.debug(
+                "[memorix] skip person fact writeback by chat filter: session=%s user=%s group=%s",
+                item.session_id,
+                item.user_id,
+                item.group_id,
+            )
+            return
         person_id = self._person_id(item)
         if not person_id:
             return

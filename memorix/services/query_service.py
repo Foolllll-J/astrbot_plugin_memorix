@@ -102,6 +102,10 @@ class QueryService:
         source: Optional[str] = None,
         top_k: Optional[int] = None,
         include_paragraphs: bool = False,
+        stream_id: Optional[str] = None,
+        group_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        enforce_chat_filter: bool = False,
     ) -> Dict[str, Any]:
         runtime = await self.runtime_manager.get_runtime(scope_key)
         return await BaseQueryService(runtime.context).episode(
@@ -112,6 +116,10 @@ class QueryService:
             source=source,
             top_k=top_k,
             include_paragraphs=include_paragraphs,
+            stream_id=stream_id,
+            group_id=group_id,
+            user_id=user_id,
+            enforce_chat_filter=enforce_chat_filter,
         )
 
     async def aggregate(
@@ -126,6 +134,10 @@ class QueryService:
         top_k: Optional[int] = None,
         mix: bool = True,
         mix_top_k: Optional[int] = None,
+        stream_id: Optional[str] = None,
+        group_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        enforce_chat_filter: bool = False,
     ) -> Dict[str, Any]:
         runtime = await self.runtime_manager.get_runtime(scope_key)
         return await BaseQueryService(runtime.context).aggregate(
@@ -137,6 +149,10 @@ class QueryService:
             top_k=top_k,
             mix=mix,
             mix_top_k=mix_top_k,
+            stream_id=stream_id,
+            group_id=group_id,
+            user_id=user_id,
+            enforce_chat_filter=enforce_chat_filter,
         )
 
     async def stats(self, *, scope_key: str) -> Dict[str, Any]:

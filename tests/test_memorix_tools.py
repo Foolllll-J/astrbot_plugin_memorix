@@ -4,7 +4,10 @@ from types import SimpleNamespace
 import numpy as np
 
 from astrbot_plugin_memorix.main import MemorixPlugin
+from astrbot_plugin_memorix.memorix.amemorix.context import AppContext
+from astrbot_plugin_memorix.memorix.amemorix.services.query_service import QueryService
 from astrbot_plugin_memorix.memorix.core.storage.metadata_store import MetadataStore
+from astrbot_plugin_memorix.memorix.services.ingest_service import IngestService
 from astrbot_plugin_memorix.memorix.services.content_router import MemoryContentRouter
 from astrbot_plugin_memorix.memorix.services.person_fact_writeback_service import (
     PersonFactWritebackItem,
@@ -227,3 +230,162 @@ def test_person_fact_writeback_stores_paragraph_and_registry_points(tmp_path):
         assert "小明喜欢深夜打游戏" in paragraphs[0]["content"]
     finally:
         metadata_store.close()
+
+
+class _RejectingChatCtx:
+    config = {"retrieval": {"temporal": {"default_top_k": 10}}}
+
+    def get_config(self, key: str, default=None):
+        current = self.config
+        for part in key.split("."):
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
+                return default
+        return current
+
+    def is_chat_enabled(self, **_kwargs):
+        return False
+
+
+def test_chat_filter_matches_maibot_empty_list_semantics():
+    ctx = AppContext.__new__(AppContext)
+
+    ctx.config = {"filter": {"enabled": True, "mode": "blacklist", "chats": []}}
+    assert ctx.is_chat_enabled(stream_id="s1", group_id="g1", user_id="u1") is True
+
+    ctx.config = {"filter": {"enabled": True, "mode": "whitelist", "chats": []}}
+    assert ctx.is_chat_enabled(stream_id="s1", group_id="g1", user_id="u1") is False
+
+    ctx.config = {"filter": {"enabled": True, "mode": "blacklist", "chats": ["group:g1"]}}
+    assert ctx.is_chat_enabled(stream_id="s1", group_id="g1", user_id="u1") is False
+    assert ctx.is_chat_enabled(stream_id="s1", group_id="g2", user_id="u1") is True
+
+    ctx.config = {"filter": {"enabled": True, "mode": "whitelist", "chats": ["user:u1", "stream:s2"]}}
+    assert ctx.is_chat_enabled(stream_id="s1", group_id="g1", user_id="u1") is True
+    assert ctx.is_chat_enabled(stream_id="s2", group_id="g2", user_id="u2") is True
+    assert ctx.is_chat_enabled(stream_id="s3", group_id="g3", user_id="u3") is False
+
+
+def test_ingest_message_respects_chat_filter_before_storage():
+    service = IngestService(
+        _FakeRuntimeManager(_RejectingChatCtx()),
+        {"ingest": {"memory_write_mode": "both", "skip_empty_text": True}},
+    )
+
+    result = asyncio.run(
+        service.ingest_message(
+            scope_key="default",
+            session_id="s1",
+            role="user",
+            content="我喜欢 RPG",
+            source="chat:test:s1",
+            user_id="u1",
+            group_id="g1",
+        )
+    )
+
+    assert result["skipped"] is True
+    assert result["reason"] == "chat_filtered"
+    assert result["result"]["transcript"]["stored"] is False
+
+
+def test_person_fact_writeback_respects_chat_filter():
+    class _ExplodingMetadataStore:
+        def get_person_registry(self, *_args, **_kwargs):
+            raise AssertionError("filtered chat should not touch person registry")
+
+    ctx = _RejectingChatCtx()
+    ctx.metadata_store = _ExplodingMetadataStore()
+    service = PersonFactWritebackService(
+        _FakeRuntimeManager(ctx),
+        {"person_fact_writeback": {"enabled": True}},
+    )
+    item = PersonFactWritebackItem(
+        scope_key="default",
+        session_id="s1",
+        user_text="我喜欢 RPG",
+        assistant_text="我记住了。",
+        user_id="u1",
+        group_id="g1",
+        platform="qq",
+    )
+
+    asyncio.run(service._handle_item(item))
+
+
+def test_episode_and_aggregate_queries_respect_chat_filter():
+    service = QueryService(_RejectingChatCtx())
+
+    episode = asyncio.run(
+        service.episode(
+            query="RPG",
+            stream_id="s1",
+            group_id="g1",
+            user_id="u1",
+            enforce_chat_filter=True,
+        )
+    )
+    aggregate = asyncio.run(
+        service.aggregate(
+            query="RPG",
+            stream_id="s1",
+            group_id="g1",
+            user_id="u1",
+            enforce_chat_filter=True,
+        )
+    )
+
+    assert episode["filtered"] is True
+    assert episode["results"] == []
+    assert aggregate["filtered"] is True
+    assert aggregate["mixed_results"] == []
+
+
+def test_passive_event_ingest_skips_filtered_chat():
+    class _Context:
+        pass
+
+    class _ProfileService:
+        called = False
+
+        async def upsert_registry_from_event(self, **_kwargs):
+            self.called = True
+
+    class _IngestService:
+        called = False
+
+        async def ingest_message(self, **_kwargs):
+            self.called = True
+            return {"success": True, "skipped": False}
+
+    class _Event:
+        unified_msg_origin = "umo:s1"
+        message_str = "我喜欢 RPG"
+        message_obj = SimpleNamespace(session_id="s1", message_id="m1", timestamp=123)
+
+        def get_platform_name(self):
+            return "qq"
+
+        def get_sender_id(self):
+            return "u1"
+
+        def get_sender_name(self):
+            return "小明"
+
+        def get_group_id(self):
+            return "g1"
+
+        def get_self_id(self):
+            return "bot"
+
+    plugin = MemorixPlugin(_Context(), {"scope": {"mode": "group_global"}})
+    plugin.runtime_manager = _FakeRuntimeManager(_RejectingChatCtx())
+    plugin.profile_service = _ProfileService()
+    plugin.ingest_service = _IngestService()
+
+    result = asyncio.run(plugin._ingest_event_message(_Event(), "user", "我喜欢 RPG"))
+
+    assert result is False
+    assert plugin.profile_service.called is False
+    assert plugin.ingest_service.called is False

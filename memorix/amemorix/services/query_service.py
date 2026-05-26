@@ -80,6 +80,8 @@ class QueryService:
             "elapsed_ms": result.elapsed_ms,
             "results": SearchExecutionService.to_serializable_results(result.results),
         }
+        if result.chat_filtered:
+            payload["filtered"] = True
         if result.query_type in {"time", "hybrid"}:
             payload["time_from"] = result.time_from
             payload["time_to"] = result.time_to
@@ -247,9 +249,30 @@ class QueryService:
         source: Optional[str] = None,
         top_k: Optional[int] = None,
         include_paragraphs: bool = False,
+        stream_id: Optional[str] = None,
+        group_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        enforce_chat_filter: bool = False,
     ) -> Dict[str, Any]:
-        ts_from, ts_to = parse_query_time_range(time_from, time_to) if (time_from or time_to) else (None, None)
         safe_top_k = max(1, min(50, int(top_k or self.ctx.get_config("retrieval.temporal.default_top_k", 10))))
+        checker = getattr(self.ctx, "is_chat_enabled", None)
+        if enforce_chat_filter and callable(checker) and not checker(
+            stream_id=stream_id,
+            group_id=group_id,
+            user_id=user_id,
+        ):
+            return {
+                "query_type": "episode",
+                "query": query,
+                "time_from": time_from,
+                "time_to": time_to,
+                "top_k": safe_top_k,
+                "count": 0,
+                "results": [],
+                "filtered": True,
+            }
+
+        ts_from, ts_to = parse_query_time_range(time_from, time_to) if (time_from or time_to) else (None, None)
         results = await self.ctx.episode_retrieval_service.query(
             query=query,
             top_k=safe_top_k,
@@ -280,11 +303,41 @@ class QueryService:
         top_k: Optional[int] = None,
         mix: bool = True,
         mix_top_k: Optional[int] = None,
+        stream_id: Optional[str] = None,
+        group_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        enforce_chat_filter: bool = False,
     ) -> Dict[str, Any]:
         safe_top_k = max(1, min(50, int(top_k or self.ctx.get_config("retrieval.temporal.default_top_k", 10))))
+        checker = getattr(self.ctx, "is_chat_enabled", None)
+        if enforce_chat_filter and callable(checker) and not checker(
+            stream_id=stream_id,
+            group_id=group_id,
+            user_id=user_id,
+        ):
+            return {
+                "success": True,
+                "query_type": "aggregate",
+                "query": query,
+                "top_k": safe_top_k,
+                "mix": bool(mix),
+                "mix_top_k": max(1, int(mix_top_k if mix_top_k is not None else safe_top_k)),
+                "count": 0,
+                "results": [],
+                "mixed_results": [],
+                "filtered": True,
+            }
 
         async def _search_runner() -> Dict[str, Any]:
-            payload = await self.search(query=query, top_k=safe_top_k, source=source)
+            payload = await self.search(
+                query=query,
+                top_k=safe_top_k,
+                stream_id=stream_id,
+                group_id=group_id,
+                user_id=user_id,
+                source=source,
+                enforce_chat_filter=enforce_chat_filter,
+            )
             payload["success"] = True
             return payload
 
@@ -296,6 +349,10 @@ class QueryService:
                 person=person,
                 source=source,
                 top_k=safe_top_k,
+                stream_id=stream_id,
+                group_id=group_id,
+                user_id=user_id,
+                enforce_chat_filter=enforce_chat_filter,
             )
             payload["success"] = True
             return payload
@@ -308,6 +365,10 @@ class QueryService:
                 person=person,
                 source=source,
                 top_k=safe_top_k,
+                stream_id=stream_id,
+                group_id=group_id,
+                user_id=user_id,
+                enforce_chat_filter=enforce_chat_filter,
             )
             payload["success"] = True
             return payload

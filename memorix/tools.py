@@ -167,9 +167,47 @@ class MemorixToolBase(FunctionTool[AstrAgentContext]):
         adapted = self._adapted(event, scope_key)
         return f"chat:{adapted.platform}:{adapted.session_id}"
 
-    async def _upsert_current_sender(self, event: AstrMessageEvent, scope_key: str) -> None:
+    async def _is_chat_enabled(
+        self,
+        event: AstrMessageEvent,
+        scope_key: str,
+        *,
+        chat_id: str = "",
+        user_id: str = "",
+    ) -> bool:
+        runtime_manager = getattr(self.plugin, "runtime_manager", None)
+        get_runtime = getattr(runtime_manager, "get_runtime", None)
+        if not callable(get_runtime):
+            return True
+
+        adapted = self._adapted(event, scope_key)
+        try:
+            runtime = await get_runtime(scope_key)
+            checker = getattr(runtime.context, "is_chat_enabled", None)
+            if not callable(checker):
+                return True
+            return bool(
+                checker(
+                    stream_id=str(chat_id or adapted.session_id or "").strip(),
+                    group_id=adapted.group_id,
+                    user_id=str(user_id or adapted.sender_id or "").strip(),
+                )
+            )
+        except Exception as exc:
+            logger.warning("[memorix] tool chat filter check failed: %s", exc, exc_info=True)
+            return True
+
+    async def _upsert_current_sender(
+        self,
+        event: AstrMessageEvent,
+        scope_key: str,
+        *,
+        respect_filter: bool = True,
+    ) -> None:
         adapted = self._adapted(event, scope_key)
         if not adapted.sender_id:
+            return
+        if respect_filter and not await self._is_chat_enabled(event, scope_key):
             return
         await self.plugin.profile_service.upsert_registry_from_event(
             scope_key=adapted.scope_key,
@@ -253,6 +291,10 @@ class MemorixSearchTool(MemorixToolBase):
                     person=person_id or None,
                     source=source,
                     top_k=limit,
+                    stream_id=chat_id,
+                    group_id=group_id,
+                    user_id=user_id,
+                    enforce_chat_filter=respect_filter,
                 )
             elif mode == "aggregate":
                 data = await self.plugin.query_service.aggregate(
@@ -263,6 +305,10 @@ class MemorixSearchTool(MemorixToolBase):
                     person=person_id or None,
                     source=source,
                     top_k=limit,
+                    stream_id=chat_id,
+                    group_id=group_id,
+                    user_id=user_id,
+                    enforce_chat_filter=respect_filter,
                 )
             elif mode in {"time", "hybrid"} or time_start or time_end:
                 data = await self.plugin.query_service.time_search(
@@ -340,7 +386,8 @@ class MemorixIngestTextTool(MemorixToolBase):
         text = str(kwargs.get("text", "") or "").strip()
         if not text:
             return _tool_result({"success": False, "error": "text is empty", "scope": scope_key})
-        await self._upsert_current_sender(event, scope_key)
+        respect_filter = bool(kwargs.get("respect_filter", True))
+        await self._upsert_current_sender(event, scope_key, respect_filter=respect_filter)
 
         timestamp = _to_float_or_none(kwargs.get("timestamp")) or float(adapted.timestamp or time.time())
         chat_id = str(kwargs.get("chat_id", "") or "").strip() or adapted.session_id
@@ -363,7 +410,7 @@ class MemorixIngestTextTool(MemorixToolBase):
                 metadata=kwargs.get("metadata") if isinstance(kwargs.get("metadata"), dict) else {},
                 entities=kwargs.get("entities") if isinstance(kwargs.get("entities"), list) else [],
                 relations=kwargs.get("relations") if isinstance(kwargs.get("relations"), list) else [],
-                respect_filter=bool(kwargs.get("respect_filter", True)),
+                respect_filter=respect_filter,
                 user_id=adapted.sender_id,
                 group_id=adapted.group_id,
             )
@@ -407,7 +454,8 @@ class MemorixIngestSummaryTool(MemorixToolBase):
         text = str(kwargs.get("text", "") or "").strip()
         if not text:
             return _tool_result({"success": False, "error": "text is empty", "scope": scope_key})
-        await self._upsert_current_sender(event, scope_key)
+        respect_filter = bool(kwargs.get("respect_filter", True))
+        await self._upsert_current_sender(event, scope_key, respect_filter=respect_filter)
 
         chat_id = str(kwargs.get("chat_id", "") or "").strip() or adapted.session_id
         external_id = str(kwargs.get("external_id", "") or "").strip() or f"summary:{chat_id}:{int(time.time())}"
@@ -423,7 +471,7 @@ class MemorixIngestSummaryTool(MemorixToolBase):
                 time_end=kwargs.get("time_end"),
                 tags=kwargs.get("tags") if isinstance(kwargs.get("tags"), list) else [],
                 metadata=kwargs.get("metadata") if isinstance(kwargs.get("metadata"), dict) else {},
-                respect_filter=bool(kwargs.get("respect_filter", True)),
+                respect_filter=respect_filter,
                 user_id=adapted.sender_id,
                 group_id=adapted.group_id,
             )
@@ -450,6 +498,7 @@ class MemorixPersonProfileTool(MemorixToolBase):
                 "person_keyword": {"type": "string", "description": "人物关键词/昵称；person_id 不确定时使用。"},
                 "chat_id": {"type": "string", "description": "聊天流/session_id；可选。"},
                 "limit": {"type": "integer", "description": "证据条数，默认 10。"},
+                "respect_filter": {"type": "boolean", "description": "是否应用聊天过滤配置，默认 true。"},
                 "scope_key": {"type": "string", "description": "高级：显式指定 Memorix scope，通常留空。"},
             },
             "required": [],
@@ -466,6 +515,22 @@ class MemorixPersonProfileTool(MemorixToolBase):
             person_id = f"{adapted.platform}:{adapted.sender_id}"
             keyword = adapted.sender_name or adapted.sender_id
         limit = _to_int(kwargs.get("limit", 10), 10, min_value=1, max_value=50)
+        chat_id = str(kwargs.get("chat_id", "") or "").strip() or adapted.session_id
+        if bool(kwargs.get("respect_filter", True)) and not await self._is_chat_enabled(
+            event,
+            scope_key,
+            chat_id=chat_id,
+            user_id=adapted.sender_id,
+        ):
+            return _tool_result(
+                {
+                    "success": True,
+                    "filtered": True,
+                    "scope": scope_key,
+                    "chat_id": chat_id,
+                    "detail": "chat_filtered",
+                }
+            )
         try:
             data = await self.plugin.profile_service.query(
                 scope_key=scope_key,
@@ -475,7 +540,7 @@ class MemorixPersonProfileTool(MemorixToolBase):
                 force_refresh=False,
             )
             data["scope"] = scope_key
-            data["chat_id"] = str(kwargs.get("chat_id", "") or "").strip() or adapted.session_id
+            data["chat_id"] = chat_id
             return _tool_result(data)
         except Exception as exc:
             logger.warning("[memorix] get_person_profile tool failed: %s", exc, exc_info=True)

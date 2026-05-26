@@ -171,7 +171,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "segmentation_temperature": 0.2,
         "segmentation_max_tokens": 1500,
     },
-    "filter": {"enabled": True, "mode": "whitelist", "chats": []},
+    "filter": {"enabled": True, "mode": "blacklist", "chats": []},
     "ingest": {
         "record_all_events": True,
         "skip_empty_text": True,

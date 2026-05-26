@@ -68,7 +68,7 @@ class AppContext:
         if not bool(filter_config.get("enabled", True)):
             return True
 
-        mode = str(filter_config.get("mode", "whitelist")).strip().lower()
+        mode = str(filter_config.get("mode", "blacklist")).strip().lower()
         chats = filter_config.get("chats", [])
         if not chats:
             return mode == "blacklist"

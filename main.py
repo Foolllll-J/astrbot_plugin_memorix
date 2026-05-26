@@ -192,6 +192,23 @@ class MemorixPlugin(Star):
         session = str(getattr(getattr(event, "message_obj", None), "session_id", "") or getattr(event, "unified_msg_origin", ""))
         return f"scope={scope} platform={platform} session={session or '-'} sender={sender or '-'} group={group or '-'}"
 
+    async def _is_adapted_chat_enabled(self, adapted, user_id: str = "") -> bool:
+        try:
+            runtime = await self.runtime_manager.get_runtime(adapted.scope_key)
+            checker = getattr(runtime.context, "is_chat_enabled", None)
+            if not callable(checker):
+                return True
+            return bool(
+                checker(
+                    stream_id=adapted.session_id,
+                    group_id=adapted.group_id,
+                    user_id=str(user_id or adapted.sender_id or "").strip(),
+                )
+            )
+        except Exception:
+            logger.warning("[memorix] chat filter check failed: scope=%s", adapted.scope_key, exc_info=True)
+            return True
+
     async def _format_event_text_for_memory(self, event: AstrMessageEvent) -> str:
         formatted = await format_astrbot_event_message(
             event,
@@ -205,9 +222,10 @@ class MemorixPlugin(Star):
         )
         return self._strip_leading_bot_mention(formatted.text, self_id)
 
-    async def _ingest_event_message(self, event: AstrMessageEvent, role: str, text: str) -> None:
+    async def _ingest_event_message(self, event: AstrMessageEvent, role: str, text: str) -> bool:
         adapted = AstrbotEventAdapter.from_event(event, self._resolve_scope(event))
         normalized_role = str(role or "user").strip().lower() or "user"
+        filter_user_id = adapted.sender_id
         self_id = str(
             getattr(event, "get_self_id", lambda: "")()
             or getattr(getattr(event, "message_obj", None), "self_id", "")
@@ -221,25 +239,22 @@ class MemorixPlugin(Star):
             sender_name = "assistant"
             event_timestamp = time.time()
         elif normalized_role == "user" and adapted.sender_id and self_id and adapted.sender_id == self_id:
-            return
+            return False
 
         content = str(text or "").strip()
         if not content and self._bool_cfg(self.config, "ingest.skip_empty_text", True):
-            return
+            return False
+
+        if not await self._is_adapted_chat_enabled(adapted, filter_user_id):
+            logger.debug(
+                "[memorix] skip chat-filtered message role=%s %s",
+                normalized_role,
+                self._event_ctx_text(event, adapted.scope_key),
+            )
+            return False
 
         source = f"chat:{adapted.platform}:{adapted.session_id}"
-        if normalized_role == "user":
-            await self.profile_service.upsert_registry_from_event(
-                scope_key=adapted.scope_key,
-                platform=adapted.platform,
-                sender_id=sender_id,
-                sender_name=sender_name or sender_id,
-                group_id=adapted.group_id,
-                session_id=adapted.session_id,
-                unified_msg_origin=adapted.unified_msg_origin,
-                timestamp=float(event_timestamp) if event_timestamp else None,
-            )
-        await self.ingest_service.ingest_message(
+        result = await self.ingest_service.ingest_message(
             scope_key=adapted.scope_key,
             session_id=adapted.session_id,
             role=normalized_role,
@@ -254,13 +269,29 @@ class MemorixPlugin(Star):
             role_origin=normalized_role,
             timestamp=event_timestamp,
             time_meta={"event_time": event_timestamp} if event_timestamp else None,
+            filter_user_id=filter_user_id,
         )
+        if bool(result.get("skipped", False)):
+            return False
+
+        if normalized_role == "user":
+            await self.profile_service.upsert_registry_from_event(
+                scope_key=adapted.scope_key,
+                platform=adapted.platform,
+                sender_id=sender_id,
+                sender_name=sender_name or sender_id,
+                group_id=adapted.group_id,
+                session_id=adapted.session_id,
+                unified_msg_origin=adapted.unified_msg_origin,
+                timestamp=float(event_timestamp) if event_timestamp else None,
+            )
         logger.debug(
             "[memorix] ingested role=%s chars=%s %s",
             normalized_role,
             len(content),
             self._event_ctx_text(event, adapted.scope_key),
         )
+        return True
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def on_all_messages(self, event: AstrMessageEvent):
@@ -274,7 +305,9 @@ class MemorixPlugin(Star):
             if self._bool_cfg(self.config, "ingest.skip_command_messages", True) and self._is_command_message(text):
                 logger.debug("[memorix] skip command message %s", self._event_ctx_text(event))
                 return
-            await self._ingest_event_message(event, "user", text)
+            ingested = await self._ingest_event_message(event, "user", text)
+            if not ingested:
+                return
             if not self._bool_cfg(self.config, "summarization.auto_import.after_reply_only", True):
                 adapted = AstrbotEventAdapter.from_event(event, self._resolve_scope(event))
                 await self.summary_service.maybe_enqueue_auto_summary(
@@ -292,7 +325,9 @@ class MemorixPlugin(Star):
         adapted = AstrbotEventAdapter.from_event(event, self._resolve_scope(event))
         try:
             user_text = await self._format_event_text_for_memory(event)
-            await self._ingest_event_message(event, "assistant", text)
+            ingested = await self._ingest_event_message(event, "assistant", text)
+            if not ingested:
+                return
             if user_text and not self._is_command_message(user_text):
                 await self.person_fact_writeback_service.enqueue(
                     PersonFactWritebackItem(

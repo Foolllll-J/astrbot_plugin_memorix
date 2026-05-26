@@ -171,6 +171,8 @@ class IngestService:
         role_origin: str = "",
         timestamp: float = 0,
         time_meta: Optional[Dict[str, Any]] = None,
+        respect_filter: bool = True,
+        filter_user_id: str = "",
     ) -> Dict[str, Any]:
         text = str(content or "").strip()
         if not text and bool(self.plugin_config.get("ingest", {}).get("skip_empty_text", True)):
@@ -179,6 +181,18 @@ class IngestService:
         runtime = await self.runtime_manager.get_runtime(scope_key)
         ctx = runtime.context
         session = str(session_id or "").strip() or f"scope:{scope_key}"
+        if respect_filter and hasattr(ctx, "is_chat_enabled"):
+            check_user_id = str(filter_user_id or user_id or "").strip()
+            if not ctx.is_chat_enabled(stream_id=session, group_id=group_id, user_id=check_user_id):
+                return {
+                    "success": True,
+                    "skipped": True,
+                    "reason": "chat_filtered",
+                    "result": {
+                        "mode": "filtered",
+                        "transcript": {"session_id": session, "stored": False},
+                    },
+                }
         route = self.content_router.route_message(
             role=role,
             text=text,
