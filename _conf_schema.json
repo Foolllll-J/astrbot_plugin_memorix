@@ -158,7 +158,7 @@
           "enable_time_intent": {
             "type": "bool",
             "description": "启用自然语言时间意图识别",
-            "hint": "开启后，可识别“昨天”“上周”“这个月”“从昨天到今天”等常见中文时间表达，并自动构造时间窗口。",
+            "hint": "开启后，可识别“昨天”“上周”“这个月”“从昨天到今天”等常见时间表达，并自动构造时间窗口。",
             "default": true
           }
         }
@@ -166,7 +166,7 @@
       "aggregate": {
         "type": "object",
         "description": "聚合检索 —— 混合普通检索、时序检索与 Episode 摘要结果",
-        "hint": "A_memorix 新版 /v1/query/aggregate 使用的融合配置。",
+        "hint": "融合配置。",
         "items": {
           "rrf_k": {
             "type": "int",
@@ -374,7 +374,7 @@
       "memory_write_mode": {
         "type": "string",
         "description": "长期记忆写入模式",
-        "hint": "transcript_only：只记录清洗后的聊天流水，达到阈值后由自动总结提炼长期记忆（推荐，更接近 MaiBot）；direct：同时把用户消息直接写入长期记忆；both：语义等同 direct，强调保留 transcript 与直写并行；auto：由内容路由器仅对稳定事实候选消息直写。",
+        "hint": "transcript_only：只记录清洗后的聊天流水，达到阈值后由自动总结提炼长期记忆（推荐）；direct：同时把用户消息直接写入长期记忆；both：语义等同 direct，强调保留 transcript 与直写并行；auto：由内容路由器仅对稳定事实候选消息直写。",
         "default": "transcript_only",
         "options": [
           "transcript_only",
