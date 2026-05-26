@@ -41,7 +41,6 @@ class PersonFactWritebackService:
     def __init__(self, runtime_manager: ScopeRuntimeManager, plugin_config: Dict[str, Any] | None = None) -> None:
         self.runtime_manager = runtime_manager
         self.plugin_config = plugin_config or {}
-        self.router = MemoryContentRouter(self.plugin_config)
         self._queue: asyncio.Queue[PersonFactWritebackItem] = asyncio.Queue(maxsize=self._queue_maxsize())
         self._worker_task: Optional[asyncio.Task] = None
         self._stopping = False
@@ -132,10 +131,9 @@ class PersonFactWritebackService:
             return False
         if not assistant_text:
             return False
-        if not str(item.user_id or "").strip():
+        if MemoryContentRouter._looks_ephemeral(assistant_text) or MemoryContentRouter._looks_placeholder_only(assistant_text):
             return False
-        route = self.router.route_message(role="user", text=user_text)
-        if route.reason == "ephemeral" or MemoryContentRouter._looks_ephemeral(user_text):
+        if not str(item.user_id or "").strip():
             return False
         return True
 
