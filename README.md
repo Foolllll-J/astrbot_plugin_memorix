@@ -9,7 +9,7 @@
 图谱 + 向量混合检索 · 记忆生命周期管理 · 人物画像 · 总结导入 · 内嵌 WebUI
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.16-blue)](https://github.com/Soulter/AstrBot)
-[![Version](https://img.shields.io/badge/version-v0.4.0-green)]()
+[![Version](https://img.shields.io/badge/version-v0.9.0-green)]()
 [![Platforms](https://img.shields.io/badge/platforms-QQ%20%7C%20Telegram%20%7C%20Discord-orange)]()
 
 </div>
@@ -32,6 +32,10 @@
 
 采用双路检索架构，向量路径（FAISS / Numpy 余弦）与稀疏路径（BM25 + Jieba 中文分词）并行召回，通过加权 RRF 融合排序。可选启用 Personalized PageRank 利用图谱拓扑进行二次重排，无需额外 reranker 模型。
 
+### 智能查询路由
+
+插件可根据用户提问内容自动选择最佳检索模式：识别到「昨天」「上周」「最近一个月」等时间表达时自动切换为时序检索或混合检索；普通语义问题则走标准向量+稀疏路径。也支持 Episode 事件摘要检索和聚合检索，多通道结果通过可配置权重的 RRF 融合排序。
+
 ### 记忆生命周期
 
 记忆不是静态数据，而是有"生命"的：
@@ -43,25 +47,27 @@
 
 ### 人物画像系统
 
-自动从消息中提取发送者信息，后台定期刷新画像（默认 30 分钟周期，6 小时 TTL）。LLM 请求时自动注入发送者画像作为上下文参考。支持手动覆盖与清除。
+自动从消息中提取发送者信息，后台定期刷新画像（默认 6 小时 TTL）。LLM 请求时自动注入发送者画像作为上下文参考。支持手动覆盖与清除。
+
+### 人物事实写回
+
+机器人回复后，自动从用户发言中提取稳定的个人事实（如「我是学生」「我喜欢打篮球」），写入长期记忆和用户画像。支持队列化异步提取、每用户特征上限管理、独立 Provider 和温度参数配置。
 
 ### 总结导入
 
-会话总结支持三种数据源：插件 transcript、AstrBot 原生会话历史、以及 hybrid 回退策略。可手动触发、定时执行，也可按消息阈值自动触发。通过 LLM 对对话生成结构化摘要并回写至记忆系统，支持叙事、事实、结构化等多种知识类型。
+会话总结支持三种数据源：插件 transcript、AstrBot 原生会话历史、以及 hybrid 回退策略。可手动触发，也可按新增消息数+冷却时间自动触发。通过 LLM 对对话生成结构化摘要并回写至记忆系统，支持叙事、事实、结构化等多种知识类型。
+
+### 事件摘要（Episode）
+
+自动将聊天内容按话题分段，后台异步生成可检索的事件摘要。例如问「上周发生了什么」时，机器人能给出完整的事件概述，而不是零散的句子。支持配置生成间隔、批次大小和重试策略。
 
 ### 内嵌 WebUI
 
 基于 AstrBot Plugin Pages 的 Dashboard 内嵌管理界面，提供：图谱浏览与关系编辑、记忆管理与来源追踪、回收站恢复、人物画像管理。接口经 AstrBot Dashboard 鉴权后转发到插件内 runtime。
 
-### A_memorix 0.6.1 服务层同步
+### 聊天过滤
 
-本版本已同步新版 A_memorix API-first 服务层，插件侧保留 AstrBot 生命周期、Provider、scope/source 隔离与 NapCat/OneBot 事件适配。新增能力包括：
-
-- `/v1/query/episode`、`/v1/query/aggregate` 聚合查询链路
-- 关系写入统一走 `RelationWriteService`，关系向量化与图谱边保持一致
-- Episode 后台生成队列与 source 重建状态
-- `/v1/readyz` 仪表盘状态中的 runtime self-check / queue 信息
-- source 严格过滤 + 空结果安全回退，避免跨群记忆误注入
+支持白名单/黑名单两种模式，精确控制哪些群聊或私聊可以使用记忆功能。过滤粒度支持 `group:群号`、`user:用户号`、`stream:频道标识` 等格式。
 
 ### 导入中心
 
@@ -71,7 +77,10 @@ Dashboard 内嵌导入视图默认启用。页面可进行如下三种导入：
 - 原始目录扫描导入（`raw` / `plugin_data` 别名）
 
 导入中心支持手动选择 `knowledge_type`（`auto/factual/narrative/structured/mixed`），并提供任务级/文件级/分块级状态观察、任务取消与失败重试。
-详细说明可见：`memorix/IMPORT_GUIDE.md`。
+
+### A_memorix 服务层同步
+
+本插件基于 A_Dawn 的 A_Memorix 设计理念开发，同步了 API-first 服务层架构，插件侧保留 AstrBot 生命周期、Provider、scope/source 隔离与 NapCat/OneBot 事件适配。
 
 ## 工作流
 
@@ -82,19 +91,20 @@ Dashboard 内嵌导入视图默认启用。页面可进行如下三种导入：
 ① 作用域路由 ── 按 scope.mode 确定记忆归属
   │
   ▼
-② 消息清洗与内容路由 ── 默认采用 MaiBot 风格 transcript_only：先生成 processed_plain_text 并进入 transcript，再由总结任务提炼长期记忆；可切到 direct/both/auto 获得直写或事实候选直写
+② 聊天过滤 ── 按白名单/黑名单决定是否处理该会话
   │
   ▼
-③ 写回提炼 ── 自动/手动总结带状态游标；可选人物事实写回会在机器人回复后提取用户稳定事实
+③ 消息清洗与内容路由 ── 默认采用 transcript_only：先生成 processed_plain_text 并进入 transcript，再由总结任务提炼长期记忆；可切到 direct/both/auto 获得直写或事实候选直写
   │
   ▼
-④ 检索注入 ── LLM 请求时按 scope/source 混合检索记忆，注入当前用户消息上下文
+④ 写回提炼 ── 自动/手动总结带状态游标；人物事实写回会在机器人回复后提取用户稳定事实
   │
   ▼
-⑤ 后台维护 ── 衰减 / 冻结 / 剪枝 / 画像刷新 / Episode 生成 / 向量持久化
+⑤ 检索注入 ── LLM 请求时按 scope/source 混合检索记忆，支持自动查询路由（语义/时序/混合/聚合）
+  │
+  ▼
+⑥ 后台维护 ── 衰减 / 冻结 / 剪枝 / 画像刷新 / Episode 生成 / 向量持久化
 ```
-
-## 本插件基于 A_Dawn 的 A_Memorix 设计理念开发，并针对 AstrBot 做了完整适配。
 
 ## 快速开始
 
@@ -126,7 +136,7 @@ https://github.com/exynos967/astrbot_plugin_memorix
 
 本插件不再注册聊天命令，避免和 MaiBot 版工具调用路径产生双入口差异。
 
-- **日常记忆写入/召回**：由 LLM 工具自动调用 `search_memory`、`ingest_summary`、`ingest_text`、`get_person_profile`、`maintain_memory`、`memory_stats` 完成。
+- **日常记忆写入/召回**：请求前会自动注入当前聊天相关的长期记忆和人物画像（附加到当前用户消息的额外内容，不改写稳定 system prompt）；LLM 也可继续通过 `search_memory`、`get_person_profile` 等工具按需补查，通过 `ingest_summary`、`ingest_text`、`maintain_memory`、`memory_stats` 写入或维护记忆。
 - **管理员记忆维护**：已注册与 MaiBot 对齐的管理工具 `memory_graph_admin`、`memory_source_admin`、`memory_episode_admin`、`memory_profile_admin`、`memory_runtime_admin`、`memory_import_admin`、`memory_tuning_admin`、`memory_v5_admin`、`memory_delete_admin`；这些工具仅 AstrBot 管理员事件可调用。
 - **图谱、检索、导入、总结、回收站、画像覆盖等管理操作**：可在 AstrBot Dashboard 的插件详情页打开 `Memorix 控制台`，也可由管理员通过上述管理工具让 LLM 执行。
 - **作用域、检索、生命周期、人物画像、自动总结等策略**：在 AstrBot 插件配置页修改 `_conf_schema.json` 暴露的配置项。
@@ -173,10 +183,9 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | 配置项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
 | `ingest.record_all_events` | bool | `true` | 是否记录所有消息事件 |
-| `ingest.skip_empty_text` | bool | `true` | 忽略空文本消息 |
 | `ingest.skip_command_messages` | bool | `true` | 忽略命令消息（按 `command_prefixes` 判断） |
-| `ingest.memory_write_mode` | string | `transcript_only` | 写入模式：`transcript_only` 先保留聊天流水并由自动总结提炼长期记忆（更接近 MaiBot）；`direct`/`both` 会额外直接写入长期记忆；`auto` 只让事实候选消息直写 |
-| `ingest.direct_write_assistant` | bool | `true` | 是否将机器人回复也直接写入长期记忆 |
+| `ingest.memory_write_mode` | string | `transcript_only` | 写入模式：`transcript_only` 先保留聊天流水并由自动总结提炼长期记忆；`direct`/`both` 会额外直接写入长期记忆；`auto` 只让事实候选消息直写 |
+| `ingest.direct_write_assistant` | bool | `true` | 是否将机器人回复也直接写入长期记忆（仅 direct/both 模式生效） |
 | `ingest.content_router.enabled` | bool | `true` | 启用内容路由器，决定 transcript/直写策略 |
 | `ingest.content_router.drop_ephemeral_transcript` | bool | `false` | 是否直接丢弃寒暄/纯占位消息的 transcript |
 | `ingest.content_router.auto_direct_min_chars` | int | `12` | `auto` 模式下事实候选消息直写所需的最小字符数 |
@@ -184,18 +193,25 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | `ingest.skip_placeholder_only` | bool | `true` | 忽略只有 `[图片]`、`[表情]`、`[转发消息]` 等占位符的消息 |
 | `ingest.max_message_chars` | int | `2000` | 单条消息平面化后写入 transcript/记忆的最大字符数 |
 | `ingest.max_forward_fetch` | int | `8` | OneBot 合并转发解析时最多拉取的转发消息层数/批次 |
-| `ingest.image_caption.enabled` | bool | `false` | 是否调用当前聊天 Provider 对图片做转述；默认关闭以避免额外 LLM 成本 |
+| `ingest.image_caption.enabled` | bool | `false` | 是否调用视觉模型对图片做转述；默认关闭以避免额外 LLM 成本 |
 | `ingest.image_caption.provider_id` | string | `""` | 图片转述专用 Provider ID；留空使用当前会话 Provider |
 | `ingest.image_caption.max_count` | int | `1` | 单条消息最多转述的图片数量 |
+| `ingest.image_caption.prompt` | string | `"请简洁描述这张图片。"` | 图片转述发给视觉模型的提示词 |
 
 ### 人物事实写回（person_fact_writeback）
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `person_fact_writeback.enabled` | bool | `false` | 启用后，机器人回复后从用户原始发言中提取稳定人物事实 |
+| `person_fact_writeback.enabled` | bool | `true` | 启用后，机器人回复后从用户原始发言中提取稳定人物事实 |
+| `person_fact_writeback.queue_maxsize` | int | `256` | 待处理队列上限 |
+| `person_fact_writeback.min_user_text_chars` | int | `4` | 用户消息最少字符数才尝试提取 |
 | `person_fact_writeback.max_facts_per_turn` | int | `5` | 单轮最多写入事实数 |
+| `person_fact_writeback.max_registry_facts` | int | `30` | 每用户画像最多保留的特征条目数 |
+| `person_fact_writeback.max_evidence_chars` | int | `800` | 发给 LLM 分析的用户消息最大字符数 |
 | `person_fact_writeback.update_registry_memory_points` | bool | `true` | 同步把事实追加到人物画像 memory_points |
 | `person_fact_writeback.chat_provider_id` | string | `""` | 事实提取专用 Provider ID，留空使用当前/默认 Provider |
+| `person_fact_writeback.temperature` | float | `0.1` | 事实提取 LLM 温度参数 |
+| `person_fact_writeback.max_tokens` | int | `800` | 事实提取最大输出 token 数 |
 
 ### 提供商（provider）
 
@@ -222,11 +238,19 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | 配置项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
 | `retrieval.top_k_final` | int | `10` | 默认返回结果数 |
+| `retrieval.auto_inject.enabled` | bool | `true` | 每次 LLM 请求前自动检索并注入相关长期记忆 |
+| `retrieval.auto_inject.top_k` | int | `5` | 自动注入最多包含的记忆条数 |
+| `retrieval.auto_inject.min_query_chars` | int | `4` | 当前消息少于该长度时不触发自动检索 |
 | `retrieval.enable_ppr` | bool | `true` | 启用 PageRank 重排 |
 | `retrieval.enable_parallel` | bool | `true` | 并行检索 |
 | `retrieval.temporal.enabled` | bool | `true` | 启用时序检索 |
 | `retrieval.temporal.default_top_k` | int | `10` | 时序检索默认 top_k |
+| `retrieval.auto_route.enabled` | bool | `true` | 自动选择检索模式（语义/时序/混合） |
+| `retrieval.auto_route.enable_time_intent` | bool | `true` | 识别自然语言时间表达（昨天/上周等） |
 | `retrieval.aggregate.rrf_k` | int | `60` | 聚合检索 RRF 融合 K 值 |
+| `retrieval.aggregate.weights.search` | float | `1.0` | 语义检索通道权重 |
+| `retrieval.aggregate.weights.time` | float | `1.0` | 时序检索通道权重 |
+| `retrieval.aggregate.weights.episode` | float | `1.0` | 事件摘要检索通道权重 |
 
 ### 记忆维护（memory）
 
@@ -247,17 +271,39 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | `person_profile.enabled` | bool | `true` | 启用人物画像 |
 | `person_profile.profile_ttl_minutes` | int | `360` | 画像缓存 TTL（分钟） |
 | `person_profile.top_k_evidence` | int | `12` | 画像生成证据数量 |
+| `person_profile.injection_max_profiles` | int | `3` | 每轮自动注入的人物画像数量上限 |
 
 ### 总结（summarization）
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
 | `summarization.enabled` | bool | `true` | 启用总结导入 |
-| `summarization.source_mode` | string | `hybrid` | 总结来源模式：`transcript` / `astrbot` / `hybrid`（优先 AstrBot） |
+| `summarization.source_mode` | string | `transcript` | 总结来源模式：`transcript`（推荐） / `astrbot` / `hybrid` |
 | `summarization.context_length` | int | `50` | 总结上下文长度 |
 | `summarization.default_knowledge_type` | string | `narrative` | 总结知识类型（narrative / factual / mixed / structured / auto） |
+| `summarization.auto_import.enabled` | bool | `true` | 启用自动总结 |
+| `summarization.auto_import.after_reply_only` | bool | `true` | 只在机器人回复后才尝试总结 |
+| `summarization.auto_import.min_new_messages` | int | `12` | 触发总结需要的最少新消息数 |
+| `summarization.auto_import.cooldown_minutes` | int | `30` | 两次自动总结的最短间隔（分钟） |
 
-> 说明：对话中的自动总结会按新增消息数/冷却时间触发；手动或 WebUI 批量总结共用同一套 summary 游标，避免重复总结同一批 transcript。原“定时总结”配置未接入运行时调度，已从配置页移除，避免和自动总结语义混淆。
+### 事件摘要（episode）
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `episode.enabled` | bool | `true` | 启用事件摘要 |
+| `episode.generation_enabled` | bool | `true` | 后台自动生成事件摘要 |
+| `episode.generation_interval_seconds` | int | `30` | 后台检查间隔（秒） |
+| `episode.generation_batch_size` | int | `20` | 每次处理的聊天来源数 |
+| `episode.max_retry` | int | `3` | 生成失败重试次数 |
+| `episode.segmentation_model` | string | `auto` | 话题分段模型（auto 使用默认 Provider） |
+
+### 聊天过滤（filter）
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `filter.enabled` | bool | `true` | 启用聊天过滤 |
+| `filter.mode` | string | `blacklist` | 过滤模式：`whitelist`（白名单）/ `blacklist`（黑名单） |
+| `filter.chats` | list | `[]` | 聊天标识列表（格式：`group:123456`、`user:789012`、`stream:xxx`） |
 
 ### WebUI
 
@@ -267,7 +313,6 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `webui.enabled` | bool | `true` | 启用 Dashboard 内嵌 WebUI 接口 |
 | `webui.scope` | string | `auto` | WebUI 绑定作用域，`auto` 使用最近活跃作用域 |
 
 ### 导入中心（web.import）
@@ -344,6 +389,13 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 1. 先在目标群或私聊里发送一条普通消息，让插件记录并刷新当前作用域
 2. 在 AstrBot Dashboard 插件详情页打开 `Memorix 控制台`
 3. 如需固定查看范围，在插件配置里设置 `webui.scope`
+
+</details>
+
+<details>
+<summary>如何只让部分群使用记忆功能？</summary>
+
+启用聊天过滤功能，将 `filter.mode` 设为 `whitelist`（白名单），然后在 `filter.chats` 中填写允许的群号，格式如 `group:123456`。不在列表中的群聊将不会触发记忆记录和检索。
 
 </details>
 
