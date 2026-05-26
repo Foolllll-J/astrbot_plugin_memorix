@@ -57,7 +57,7 @@
 
 会话总结支持三种数据源：插件 transcript、AstrBot 原生会话历史、以及 hybrid 回退策略。可手动触发，也可按新增消息数+冷却时间自动触发。通过 LLM 对对话生成结构化摘要并回写至记忆系统，支持叙事、事实、结构化等多种知识类型。
 
-### 事件摘要（Episode）
+### 事件摘要
 
 自动将聊天内容按话题分段，后台异步生成可检索的事件摘要。例如问「上周发生了什么」时，机器人能给出完整的事件概述，而不是零散的句子。支持配置生成间隔、批次大小和重试策略。
 
@@ -78,7 +78,7 @@ Dashboard 内嵌导入视图默认启用。页面可进行如下三种导入：
 
 导入中心支持手动选择 `knowledge_type`（`auto/factual/narrative/structured/mixed`），并提供任务级/文件级/分块级状态观察、任务取消与失败重试。
 
-#### 本插件基于 A_Dawn 的 A_Memorix 设计理念开发，插件侧保留 AstrBot 生命周期、Provider、scope/source 隔离与 NapCat/OneBot 事件适配。
+#### 本插件基于 A_Dawn 的 A_Memorix 设计理念开发，并针对 AstrBot 做了完整适配。
 
 ## 工作流
 
