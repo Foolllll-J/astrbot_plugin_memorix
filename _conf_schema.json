@@ -1,13 +1,13 @@
 {
   "scope": {
     "type": "object",
-    "description": "记忆作用域 —— 决定哪些会话共享同一份记忆",
-    "hint": "作用域模式影响记忆的隔离粒度，请根据实际场景选择。",
+    "description": "记忆共享范围",
+    "hint": "决定机器人的记忆在哪些聊天之间是互通的。",
     "items": {
       "mode": {
         "type": "string",
-        "description": "作用域隔离模式",
-        "hint": "platform_global：同平台所有会话共享记忆；user_global：按用户隔离；group_global按群隔离，私聊自动退化为按用户隔离；umo：按最细粒度隔离，每个独立消息来源一份记忆。",
+        "description": "记忆共享模式",
+        "hint": "platform_global：同一个平台上所有会话共享一份记忆；user_global：按用户隔离；group_global：按群隔离，私聊为用户隔离；umo：每个聊天窗口独立记忆。",
         "default": "group_global",
         "options": [
           "platform_global",
@@ -20,13 +20,13 @@
   },
   "provider": {
     "type": "object",
-    "description": "LLM 模型选择 —— 指定用于总结和画像生成的聊天模型",
+    "description": "LLM 模型选择",
     "hint": "Memorix 的总结生成、人物画像提取等功能需要调用大语言模型。留空使用当前会话默认的 Provider。",
     "items": {
       "chat_provider_id": {
         "type": "string",
-        "description": "聊天模型 Provider ID（留空则使用当前会话的默认模型）",
-        "hint": "插件的总结、画像生成等 LLM 任务将使用此模型。",
+        "description": "聊天模型 Provider ID",
+        "hint": "插件的总结、画像生成等 LLM 任务将使用此模型（留空则使用当前会话的默认模型）。",
         "default": "",
         "_special": "select_provider",
         "obvious_hint": true
@@ -40,62 +40,62 @@
     "items": {
       "enabled": {
         "type": "bool",
-        "description": "启用远程 Embedding 服务",
-        "hint": "关闭（默认）：使用本地确定性向量回退，但语义检索精度有限。开启：调用你配置的 OpenAI 兼容 API，检索质量会大幅提升。开启前请确保下方的 API 地址和密钥已正确填写。",
+        "description": "启用 Embedding model",
+        "hint": "关闭：使用本地确定性向量，但语义检索精度有限。开启：调用你配置的 OpenAI 兼容 API。开启前请确保下方的 API 地址和密钥已正确填写。",
         "default": false,
         "obvious_hint": true
       },
       "dimension": {
         "type": "int",
         "description": "向量维度",
-        "hint": "Embedding 模型输出的向量维度。必须与你使用的 Embedding 模型匹配，否则会导致索引错误。若不确定请查阅模型文档。",
+        "hint": "Embedding向量维度必须和你使用的 Embedding 模型匹配，否则会导致索引错误。若不确定请查阅模型文档。",
         "default": 1024
       },
       "batch_size": {
         "type": "int",
-        "description": "单次批量请求的文本条数",
-        "hint": "每次向 API 发送的文本数量上限。增大可提升写入速度，但会增加单次请求耗时和内存占用。建议范围 8~64。",
+        "description": "每次处理的文本条数",
+        "hint": "每次发给 API 处理多少条文本。调大可以加快速度，但单次请求会变慢。一般保持默认，建议范围 8~64。",
         "default": 32
       },
       "max_concurrent": {
         "type": "int",
         "description": "最大并发请求数",
-        "hint": "同时向 API 发出的最大并发请求数。增大可加速批量处理，但可能触发 API 限流。",
+        "hint": "同时向 API 发多少个请求。调大能加快批量处理速度，过大可能被 API 限流。一般保持默认即可。",
         "default": 5
       },
       "openapi": {
         "type": "object",
-        "description": "OpenAI 兼容 Embedding API 端点配置",
-        "hint": "配置 OpenAI 兼容的 Embedding 服务地址、密钥和模型。。",
+        "description": "Embedding API 配置",
+        "hint": "填写 OpenAI 兼容格式的 Embedding API 信息。",
         "items": {
           "base_url": {
             "type": "string",
-            "description": "API 地址（Base URL）",
-            "hint": "Embedding API 的基础地址。可以不带末尾的 /v1，插件会自动补全。",
+            "description": "API 地址",
+            "hint": "Embedding 服务的api地址，末尾不需要加 /v1，插件会自动补上。",
             "default": ""
           },
           "api_key": {
             "type": "string",
             "description": "API 密钥",
-            "hint": "API Key",
+            "hint": "你的 API Key，从对应服务商处获取。",
             "default": ""
           },
           "model": {
             "type": "string",
-            "description": "Embedding 模型名称",
-            "hint": "要使用的 Embedding 模型名。",
+            "description": "模型名称",
+            "hint": "要使用的 Embedding 模型名，具体名称请查看你的服务商文档。",
             "default": ""
           },
           "timeout_seconds": {
             "type": "float",
-            "description": "请求超时（秒）",
-            "hint": "单次 Embedding API 请求的超时时间。",
+            "description": "请求超时时间（秒）",
+            "hint": "单次请求最多等待多少秒。",
             "default": 30.0
           },
           "max_retries": {
             "type": "int",
             "description": "请求失败重试次数",
-            "hint": "单次 Embedding 请求失败后的最大重试次数。设为 0 则不重试。建议 2~5 次。",
+            "hint": "请求失败后最大重试次数。设为 0 表示不重试。建议 2~5 次。",
             "default": 3
           }
         }
@@ -104,24 +104,24 @@
   },
   "retrieval": {
     "type": "object",
-    "description": "记忆检索 —— 控制从记忆库中召回相关内容的方式和数量",
+    "description": "记忆检索",
     "hint": "检索配置影响 LLM 接收到的上下文质量。合理的参数能在召回率和精度之间取得平衡。",
     "items": {
       "top_k_final": {
         "type": "int",
-        "description": "最终返回的记忆条数",
+        "description": "最终回忆的记忆条数",
         "hint": "每次 LLM 请求时，最终注入到上下文中的记忆条数上限。数值越大上下文越丰富，但会消耗更多 Token。建议范围 3~20。",
         "default": 10
       },
       "enable_ppr": {
         "type": "bool",
         "description": "启用 PageRank 图谱重排",
-        "hint": "开启后，检索结果会经过 Personalized PageRank 算法基于知识图谱的拓扑结构进行二次重排，能提升关联性强的记忆的排名。纯算法优化。",
+        "hint": "开启后，搜索结果会根据记忆之间的关联程度重新排序，让联系更紧密的记忆排在前面，建议保持开启。",
         "default": true
       },
       "enable_parallel": {
         "type": "bool",
-        "description": "启用并行检索",
+        "description": "启用并行搜索",
         "hint": "开启后，向量检索和稀疏检索（BM25）将并行执行，可降低检索延迟。",
         "default": true
       },
@@ -139,57 +139,62 @@
           "default_top_k": {
             "type": "int",
             "description": "时序检索默认返回条数",
-            "hint": "执行时序检索时，未指定数量时默认返回的记忆条数。建议范围 5~30。",
+            "hint": "执行时序检索时，默认返回的记忆条数。建议范围 5~30。",
             "default": 10
           }
         }
       },
       "auto_route": {
         "type": "object",
-        "description": "自动检索路由 —— 根据提问内容自动选择普通检索、时间检索或混合检索",
-        "hint": "开启后，插件会在 LLM 注入记忆前先判断当前问题是否包含明确时间意图。纯回忆问题走时间检索，时间+主题同时存在时走混合检索，其余保持普通语义检索。",
+        "description": "自动选择搜索方式 —— 根据提问内容自动选择普通检索、时间检索或混合检索",
+        "hint": "开启后，插件会自动判断你的问题适合用哪种搜索方式。例如问「昨天说了什么」会自动使用时间搜索，问「我喜欢吃什么」会使用语义搜索。",
         "items": {
           "enabled": {
             "type": "bool",
-            "description": "启用自动检索路由",
-            "hint": "关闭后将始终按普通语义检索处理，不再自动切换到 time/hybrid。",
+            "description": "自动选择搜索方式",
+            "hint": "关闭后所有搜索都只用语义匹配，不再自动识别时间相关的问题。",
             "default": true
           },
           "enable_time_intent": {
             "type": "bool",
-            "description": "启用自然语言时间意图识别",
-            "hint": "开启后，可识别“昨天”“上周”“这个月”“从昨天到今天”等常见时间表达，并自动构造时间窗口。",
+            "description": "识别自然语言中的时间",
+            "hint": "开启后，可识别「昨天」「上周」「这个月」「从昨天到今天」等日常时间表达。",
             "default": true
           }
         }
       },
       "aggregate": {
         "type": "object",
-        "description": "聚合检索 —— 混合普通检索、时序检索与 Episode 摘要结果",
-        "hint": "融合配置。",
+        "description": "聚合检索 —— 混合普通检索、时序检索与事件摘要结果",
+        "hint": "将语义搜索、时间搜索和事件摘要搜索的结果混合排序。一般保持默认即可。",
         "items": {
           "rrf_k": {
             "type": "int",
             "description": "RRF 融合 K 值",
+            "hint": "控制不同搜索通道结果的混合方式。数值越大，各通道的结果排名越均匀；越小，排名靠前的结果权重越高。一般不需要调整。",
             "default": 60
           },
           "weights": {
             "type": "object",
             "description": "各检索通道权重",
+            "hint": "调整不同搜索方式在最终结果中的重要程度。数值越大该通道越重要。一般保持默认的 1.0 即可。",
             "items": {
               "search": {
                 "type": "float",
-                "description": "普通语义检索权重",
+                "description": "语义检索权重",
+                "hint": "语义搜索结果在最终融合中的权重。调高则更重视「意思相近」的匹配结果。",
                 "default": 1.0
               },
               "time": {
                 "type": "float",
                 "description": "时序检索权重",
+                "hint": "按时间范围搜索结果在最终融合中的权重。调高则更重视时间维度的匹配。",
                 "default": 1.0
               },
               "episode": {
                 "type": "float",
-                "description": "Episode 检索权重",
+                "description": "事件摘要搜索权重",
+                "hint": "事件摘要搜索结果在最终融合中的权重。调高则更重视整段事件的匹配。",
                 "default": 1.0
               }
             }
@@ -206,43 +211,43 @@
       "enabled": {
         "type": "bool",
         "description": "启用记忆自动维护",
-        "hint": "关闭后记忆将永不衰减和剪枝，所有记录会永久保留。长期运行可能导致记忆库膨胀。建议保持开启。",
+        "hint": "关闭后记忆永不衰减和清除，所有记录永久保留。长期运行可能导致记忆库膨胀影响性能，建议保持开启。",
         "default": true
       },
       "half_life_hours": {
         "type": "float",
         "description": "记忆半衰期（小时）",
-        "hint": "记忆关系权重衰减到一半所需的时间。值越大记忆保持越久，值越小遗忘越快。例如 24 表示一条记忆在 24 小时后权重降为原来的一半、48 小时后降为 1/4。建议范围 6~168。",
+        "hint": "记忆权重衰减到一半所需的时间。设为 24 表示 1 天后权重降为一半、2 天后降为 1/4。值越大记忆保持越久，越小遗忘越快。建议 6~168。",
         "default": 24.0
       },
       "base_decay_interval_hours": {
         "type": "float",
-        "description": "衰减执行周期（小时）",
-        "hint": "系统多久执行一次衰减计算。值越小衰减越平滑但 CPU 开销更大。建议范围 0.5~6 小时。",
+        "description": "衰减计算间隔（小时）",
+        "hint": "系统多久执行一次衰减计算。越小衰减越平滑但 CPU 开销略大。建议 0.5~6。",
         "default": 1.0
       },
       "prune_threshold": {
         "type": "float",
-        "description": "剪枝阈值",
-        "hint": "当记忆关系权重衰减到低于此值时，该关系将被移入回收站。范围 0~1，值越大剪枝越激进（更多记忆会被回收），值越小保留越多。默认 0.1 表示权重低于 10% 时剪枝。",
+        "description": "清除阈值",
+        "hint": "记忆权重低于此值时会被移入回收站。默认 0.1 表示权重降到 10% 以下时清除。值越大清除越激进，越小保留越多。范围 0~1。",
         "default": 0.1
       },
       "freeze_duration_hours": {
         "type": "float",
         "description": "冻结保留时长（小时）",
-        "hint": "记忆降至不活跃状态后，在被剪枝前会进入「冻结」等待期。在此期间如果被再次访问可以「复活」。值越大给予记忆更多唤醒机会。建议范围 6~72 小时。",
+        "hint": "记忆权重降到阈值以下后，不会立刻被清除，而是先进入冻结状态。在此期间如果被再次提及则恢复活跃。值越大复活机会越多。建议 6~72。",
         "default": 24.0
       },
       "max_weight": {
         "type": "float",
-        "description": "关系边最大权重",
-        "hint": "单条记忆关系的权重上限，防止被频繁强化的记忆权重无限增长。建议范围 5~20。过低会限制核心记忆的突出度，过高则衰减周期会拉长。",
+        "description": "记忆权重上限",
+        "hint": "单条记忆关系的权重上限，防止频繁强化的记忆权重无限增长。建议 5~20。",
         "default": 10.0
       },
       "auto_protect_ttl_hours": {
         "type": "float",
-        "description": "强化自动保护时长（小时）",
-        "hint": "通过 WebUI 或 maintain_memory 工具强化记忆后，该记忆在此时长内不会被衰减或剪枝。建议范围 6~168 小时。",
+        "description": "手动强化后的保护时间（小时）",
+        "hint": "通过管理面板或工具手动强化某条记忆后，在这段时间内它不会被遗忘或清除。建议 6~168 小时。",
         "default": 24.0
       }
     }
@@ -250,54 +255,54 @@
   "person_profile": {
     "type": "object",
     "description": "人物画像 —— 自动提取并记录对话中出现的人物信息",
-    "hint": "人物画像系统会从消息中提取发送者的特征信息（如兴趣、性格、习惯等），在 LLM 请求时自动注入作为上下文参考，让机器人更了解对话对象。画像支持定期自动刷新，也可手动覆盖和清除。",
+    "hint": "人物画像系统会从消息中提取人物的特征信息（如兴趣、性格、习惯等），在 LLM 请求时自动注入作为上下文参考，让机器人更了解对话对象。画像支持定期自动刷新，也可手动覆盖和清除。",
     "items": {
       "enabled": {
         "type": "bool",
-        "description": "启用人物画像功能",
-        "hint": "关闭后将不会生成和注入人物画像信息。如果你不需要机器人记住用户的个人特征，可以关闭以节省 LLM 调用开销。",
+        "description": "启用用户画像",
+        "hint": "关闭后机器人不会记住用户的个人特征。",
         "default": true
       },
       "profile_ttl_minutes": {
         "type": "int",
-        "description": "画像缓存有效期（分钟）",
-        "hint": "生成的人物画像会缓存指定时长后失效并在下次需要时重新生成。值越大刷新越少（节省 LLM 调用），值越小画像越新。建议范围 60~1440（1 小时到 1 天），默认 360 分钟（6 小时）。",
+        "description": "画像更新间隔（分钟）",
+        "hint": "用户画像生成后会缓存一段时间，过期后下次需要时会重新生成。数值越大更新越少，越小画像越新。默认 360 分钟。建议 60~1440。",
         "default": 360
       },
       "top_k_evidence": {
         "type": "int",
-        "description": "画像生成时参考的证据条数",
-        "hint": "生成人物画像时，从记忆库中检索多少条相关记忆作为 LLM 的参考证据。数量越多画像越全面，但也消耗更多 Token。建议范围 5~20。",
+        "description": "生成画像时参考多少条记忆",
+        "hint": "生成用户画像时，从记忆库里取多少条相关记忆作为参考材料。越多画像越全面，但也越费 Token。建议 5~20。",
         "default": 12
       }
     }
   },
   "summarization": {
     "type": "object",
-    "description": "总结策略 —— 控制对话总结的数据来源、长度和知识类型",
-    "hint": "总结功能会调用 LLM 对一段时间内的对话生成结构化摘要，并将摘要作为高密度知识写入记忆系统。这比直接存储原始对话更高效，能在有限的上下文窗口中携带更多信息。",
+    "description": "对话总结策略 —— 控制对话总结的数据来源、长度和知识类型",
+    "hint": "机器人会定期将聊天内容总结成精炼的摘要存入记忆。这比直接存储原始对话更高效，能在有限的上下文窗口中携带更多信息。",
     "items": {
       "enabled": {
         "type": "bool",
-        "description": "启用总结功能",
-        "hint": "关闭后所有总结相关功能都将停用。记忆系统仍会记录原始消息，但不会生成摘要知识。",
+        "description": "启用对话总结",
+        "hint": "关闭后不再生成任何总结。聊天记录仍会被记录，但不会被提炼成摘要知识。",
         "default": true
       },
       "source_mode": {
         "type": "string",
-        "description": "总结数据来源模式",
-        "hint": "transcript（推荐）：仅使用插件自身记录的消息转录，完全独立于 AstrBot 会话系统，更接近 MaiBot 的消息仓库总结方式；astrbot：仅使用 AstrBot 原生会话历史记录；hybrid：优先使用 AstrBot 会话历史，失败时自动回退到插件转录。",
+        "description": "总结的聊天记录来源",
+        "hint": "transcript（推荐）：使用插件自己记录的聊天记录，独立可靠；astrbot：使用 AstrBot 自带的会话历史；hybrid：优先用 AstrBot 的，失败了自动切换到插件自己的。",
         "default": "transcript",
         "options": [
           "transcript",
-          "astrbot",
-          "hybrid"
+          "hybrid",
+          "astrbot"
         ]
       },
       "context_length": {
         "type": "int",
-        "description": "总结上下文消息条数",
-        "hint": "每次总结时取最近多少条消息作为 LLM 的输入上下文。数值越大总结越全面但消耗更多 Token。建议范围 20~200，根据你使用的 LLM 上下文窗口大小和费用预算调整。",
+        "description": "每次总结多少条消息",
+        "hint": "每次做总结时，取最近多少条聊天消息给 LLM 总结。越多总结越全面，但越费 Token。建议 20~200。",
         "default": 50
       },
       "default_knowledge_type": {
@@ -315,31 +320,31 @@
       },
       "auto_import": {
         "type": "object",
-        "description": "自动总结 —— 在对话进行中按条件自动入库",
-        "hint": "自动总结采用保守策略：只有新增消息达到阈值、未命中冷却时间、且满足触发时机时才会排队执行，避免每轮回复都触发总结。",
+        "description": "自动总结",
+        "hint": "聊天过程中自动触发总结。只有攒够足够多的新消息、并且过了冷却时间才会触发。",
         "items": {
           "enabled": {
             "type": "bool",
             "description": "启用自动总结",
-            "hint": "关闭后仅保留手动总结和定时批量总结。",
+            "hint": "关闭后不再自动总结，只能通过手动或定时任务触发。",
             "default": true
           },
           "after_reply_only": {
             "type": "bool",
-            "description": "仅在成功回复后触发自动总结",
-            "hint": "开启后，自动总结只会在机器人完成一次有效回复后检查触发条件；关闭后，用户消息写入后也可参与触发。",
+            "description": "只在机器人回复后才尝试总结",
+            "hint": "开启后，只有机器人成功回复了一条消息后才会检查是否需要总结。关闭后用户发消息时也可能触发。",
             "default": true
           },
           "min_new_messages": {
             "type": "int",
-            "description": "触发自动总结所需的最少新增消息数",
-            "hint": "自上次总结后，当前会话至少新增多少条 transcript 消息才允许自动总结。值越大越保守，默认 12。",
+            "description": "触发总结需要的最少新消息数",
+            "hint": "上次总结之后至少要新增多少条消息才会再次自动总结。数值越大总结越少，越小总结越频繁。",
             "default": 12
           },
           "cooldown_minutes": {
             "type": "int",
-            "description": "自动总结冷却时间（分钟）",
-            "hint": "同一会话两次自动总结之间至少间隔多久。用于避免高频聊天反复触发总结，默认 30 分钟。",
+            "description": "两次自动总结的最短间隔（分钟）",
+            "hint": "同一个聊天里两次自动总结至少间隔多久。防止聊天频繁时反复触发总结浪费资源。",
             "default": 30
           }
         }
@@ -348,33 +353,33 @@
   },
   "ingest": {
     "type": "object",
-    "description": "聊天写入 —— 控制消息清洗、transcript 记录和长期记忆直写",
-    "hint": "自动写入会先把 AstrBot 消息链清洗为类似 MaiBot processed_plain_text 的文本，再写入 transcript；默认由自动总结把 transcript 提炼为长期记忆。若需要即时可检索，可将写入模式改为 direct 或 both。",
+    "description": "消息记录",
+    "hint": "控制哪些聊天消息会被记录到记忆系统中。默认会先记录聊天流水，再由自动总结提炼成长期记忆。",
     "items": {
       "record_all_events": {
         "type": "bool",
-        "description": "记录所有聊天消息",
-        "hint": "开启后，普通聊天会自动进入 Memorix transcript。关闭后仅保留 LLM tools 手动写入。",
+        "description": "自动记录所有聊天消息",
+        "hint": "开启后，群聊和私聊的消息都会自动被记录。关闭后只有通过 AI 工具手动写入的内容才会进入记忆。",
         "default": true
       },
       "skip_command_messages": {
         "type": "bool",
         "description": "忽略命令消息",
-        "hint": "开启后，以 command_prefixes 开头的消息不会被自动写入，避免把插件命令/管理命令污染记忆。",
+        "hint": "开启后，以 / 等命令前缀开头的消息不会被记录，避免把「/help」「/plugin」之类的命令混进记忆里。",
         "default": true
       },
       "command_prefixes": {
         "type": "list",
         "description": "命令前缀列表",
-        "hint": "用于判断哪些消息应视为命令并跳过自动记忆。例如 [\"/\", \"!\", \".\"]。",
+        "hint": "哪些开头的消息算作命令。比如 [\"/\", \"!\", \".\"] 表示以这三个符号开头的消息都不会被记录。",
         "default": [
           "/"
         ]
       },
       "memory_write_mode": {
         "type": "string",
-        "description": "长期记忆写入模式",
-        "hint": "transcript_only：只记录清洗后的聊天流水，达到阈值后由自动总结提炼长期记忆（推荐）；direct：同时把用户消息直接写入长期记忆；both：语义等同 direct，强调保留 transcript 与直写并行；auto：由内容路由器仅对稳定事实候选消息直写。",
+        "description": "消息存储方式",
+        "hint": "transcript_only（推荐）：先把聊天记录存为流水，积攒够了再由自动总结提炼成长期记忆；direct：每条消息都立刻存为长期记忆，可以马上被搜索到；both：和 direct 一样，同时保留流水账和即时写入；auto：智能模式，只有像「我叫小明」「我喜欢猫」这样的关键信息才会立刻存入长期记忆，其他走流水。",
         "default": "transcript_only",
         "options": [
           "transcript_only",
@@ -385,77 +390,81 @@
       },
       "direct_write_assistant": {
         "type": "bool",
-        "description": "直写模式下记录机器人回复",
-        "hint": "仅在 memory_write_mode 为 direct/both 时生效。开启后机器人回复也会直接写入长期记忆；关闭后只直写用户消息。",
+        "description": "同时记录机器人的回复",
+        "hint": "仅在消息存储方式为 direct 或 both 时有效。开启后机器人自己的回复也会被存入长期记忆；关闭则只存用户的消息。",
         "default": true
       },
       "content_router": {
         "type": "object",
-        "description": "内容路由器",
-        "hint": "在写入前按内容决定是否仅进 transcript、是否直写长期记忆。默认不丢弃 transcript；只有 memory_write_mode=auto 时才会自动挑选事实候选直写。",
+        "description": "智能消息过滤",
+        "hint": "在消息存入记忆前，自动判断消息是否有价值。比如「哈哈」「嗯」这类无意义的消息可以被过滤掉，而「我是程序员」这类有信息量的内容会被优先保留。",
         "items": {
           "enabled": {
             "type": "bool",
-            "description": "启用内容路由",
+            "description": "启用智能消息过滤",
+            "hint": "开启后根据消息内容判断是否有记忆价值，自动过滤无意义的消息。",
             "default": true
           },
           "drop_ephemeral_transcript": {
             "type": "bool",
-            "description": "丢弃纯占位 transcript",
-            "hint": "关闭时仍保留流水，只是不直写长期记忆；开启后纯占位消息会直接跳过。",
-            "default": true
+            "description": "丢弃无意义的消息",
+            "hint": "开启后，像「哈哈」「嗯」「ok」「👍」这类无实质内容的消息会被直接丢弃。关闭时这些消息仍然会记在流水里，只是不会写入长期记忆。",
+            "default": false
           },
           "auto_direct_min_chars": {
             "type": "int",
-            "description": "auto 模式直写最小字符数",
-            "hint": "memory_write_mode=auto 时，事实候选消息达到该长度才会直接写入长期记忆。",
+            "description": "智能模式下的最短字数要求",
+            "hint": "仅在消息存储方式为 auto 时有效。消息至少要有这么多字，才会被判定为「有价值」并立刻存入长期记忆。防止太短的消息被误判。",
             "default": 12
           }
         }
       },
       "skip_placeholder_only": {
         "type": "bool",
-        "description": "忽略纯占位消息",
-        "hint": "开启后，仅包含 [图片]、[表情]、[转发消息]、[文件] 等占位符且没有可理解文本的消息不会入库。",
+        "description": "忽略纯图片/表情/文件消息",
+        "hint": "开启后，只包含 [图片]、[表情]、[转发消息]、[文件] 等占位符、没有文字的消息不会被记录。",
         "default": true
       },
       "max_message_chars": {
         "type": "int",
-        "description": "单条消息最大字符数",
-        "hint": "消息链平面化后最多保留多少字符，超出会截断，避免异常长消息污染 transcript。",
+        "description": "单条消息最大长度",
+        "hint": "超过这个字数的消息会被截断后再存储，防止超长消息占满记忆空间。",
         "default": 2000
       },
       "max_forward_fetch": {
         "type": "int",
-        "description": "合并转发最大拉取次数",
-        "hint": "OneBot 合并转发解析时最多递归拉取多少批转发内容。值越大越完整，但会增加平台 API 调用。",
+        "description": "合并转发最多读取批次",
+        "hint": "处理 QQ 合并转发消息时，最多读取多少批内容。数值越大读得越完整，但可能更慢。",
         "default": 8
       },
       "image_caption": {
         "type": "object",
         "description": "图片转述",
-        "hint": "可选调用视觉模型把图片转成简短文字后再写入记忆。默认关闭，避免额外模型调用成本。",
+        "hint": "可选调用视觉模型把图片转成简短文字后再写入记忆。",
         "items": {
           "enabled": {
             "type": "bool",
             "description": "启用图片转述",
+            "hint": "开启后会调用视觉模型将图片转为文字描述存入记忆。",
             "default": false
           },
           "provider_id": {
             "type": "string",
-            "description": "图片转述 Provider ID",
-            "hint": "留空使用当前会话 Provider；如需单独指定支持视觉的模型，可填写 Provider ID。",
+            "description": "图片描述使用的 LLM 模型",
+            "hint": "留空使用当前会话 Provider。",
             "default": "",
             "_special": "select_provider"
           },
           "max_count": {
             "type": "int",
-            "description": "单条消息最多转述图片数",
+            "description": "单条消息最多描述几张图片",
+            "hint": "一条消息包含多张图时，最多对几张图生成描述。",
             "default": 1
           },
           "prompt": {
             "type": "string",
-            "description": "图片转述提示词",
+            "description": "图片描述提示词",
+            "hint": "发给视觉模型的提示词，用于引导模型如何描述图片内容。",
             "default": "请简洁描述这张图片。"
           }
         }
@@ -464,137 +473,146 @@
   },
   "person_fact_writeback": {
     "type": "object",
-    "description": "人物事实写回 —— 从用户发言中自动提取稳定人物事实",
-    "hint": "类似 MaiBot 的 PersonFactWritebackService。机器人回复后，以用户原始发言为证据提取稳定事实并写入长期记忆/人物画像线索。默认关闭以避免额外模型调用成本。",
+    "description": "自动提取用户信息",
+    "hint": "机器人回复后，自动从用户发言中提取稳定的个人事实（如「我是学生」「我喜欢打篮球」），写入长期记忆和用户画像。",
     "items": {
       "enabled": {
         "type": "bool",
-        "description": "启用人物事实写回",
-        "default": false
+        "description": "启用自动提取用户信息",
+        "hint": "开启后，机器人回复后会自动从用户发言中提取个人事实（如兴趣、身份等）并写入记忆。",
+        "default": true
       },
       "queue_maxsize": {
         "type": "int",
-        "description": "写回队列上限",
+        "description": "待处理队列上限",
+        "hint": "最多允许多少条待提取的消息排队等待处理。超过上限的新消息会被跳过。一般不需要调整。",
         "default": 256
       },
       "min_user_text_chars": {
         "type": "int",
-        "description": "触发提取的用户消息最小长度",
+        "description": "最短消息长度",
+        "hint": "用户发的消息至少要有多少个字才会尝试提取信息。太短的消息（比如「嗯」「好的」）会被跳过。",
         "default": 4
       },
       "max_facts_per_turn": {
         "type": "int",
-        "description": "单轮最多写入事实数",
+        "description": "每次最多提取几条信息",
+        "hint": "从一条用户消息中最多提取多少条个人信息。",
         "default": 5
       },
       "max_registry_facts": {
         "type": "int",
-        "description": "人物注册表中保留的记忆特征上限",
+        "description": "每个用户最多保留多少条特征",
+        "hint": "用户画像中保留的特征条目上限。超出后最早的特征会被新的替换掉。",
         "default": 30
       },
       "max_evidence_chars": {
         "type": "int",
-        "description": "提取提示中保留的证据字符数",
+        "description": "提取时使用的消息长度上限",
+        "hint": "发给 AI 分析的用户消息最多保留多少字。超长消息会被截断。",
         "default": 800
       },
       "update_registry_memory_points": {
         "type": "bool",
-        "description": "同步写入人物画像 memory_points",
+        "description": "同时更新用户画像",
+        "hint": "开启后，提取出的个人信息会同步写入用户画像中，让画像更丰富。",
         "default": true
       },
       "chat_provider_id": {
         "type": "string",
-        "description": "事实提取 Provider ID",
-        "hint": "留空使用当前会话/默认 Provider；也可指定独立文本模型。",
+        "description": "信息提取使用的 LLM 模型",
+        "hint": "可以为信息提取单独指定一个模型。留空则使用默认模型。",
         "default": "",
         "_special": "select_provider"
       },
       "temperature": {
         "type": "float",
-        "description": "事实提取温度",
+        "description": "人物信息提取时的温度参数",
+        "hint": "越低提取结果越稳定保守，越高越有创意但可能不准确，范围(0.0-1.0)。",
         "default": 0.1
       },
       "max_tokens": {
         "type": "int",
-        "description": "事实提取最大输出 token",
+        "description": "最大输出token数",
+        "hint": "一般不需要调整。",
         "default": 800
       }
     }
   },
   "webui": {
     "type": "object",
-    "description": "AstrBot Dashboard 内嵌管理界面（WebUI）—— 可视化浏览和管理记忆数据",
-    "hint": "Memorix 通过 AstrBot Plugin Pages 提供内嵌控制台。可在 AstrBot Dashboard 的插件详情页打开“Memorix 控制台”。",
+    "description": "管理面板",
+    "hint": "Memorix 在 AstrBot 控制台中内置了一个管理页面，可以可视化地浏览和管理记忆数据。",
     "items": {
       "scope": {
         "type": "string",
-        "description": "WebUI 绑定的作用域",
-        "hint": "auto（推荐）：使用最近活跃作用域。也可手动指定作用域标识来固定 WebUI 只展示特定作用域的数据。首次打开且无活跃会话时回退到 default。",
+        "description": "管理面板显示哪个范围的记忆",
+        "hint": "auto（推荐）：自动显示最近活跃的聊天的记忆。也可以手动填写指定的范围标识来固定只看某个群/用户的记忆。",
         "default": "auto"
       }
     }
   },
   "web": {
     "type": "object",
-    "description": "导入中心 —— 通过 Web 界面批量导入外部知识到记忆系统",
-    "hint": "导入中心集成在 Dashboard 内嵌 WebUI 中，支持上传文件、粘贴文本和扫描目录三种方式导入外部知识。",
+    "description": "知识导入",
+    "hint": "在管理面板中批量导入外部知识到记忆系统。支持上传文件、粘贴文本和扫描目录三种方式。",
     "items": {
       "import": {
         "type": "object",
-        "description": "导入任务配置",
-        "hint": "控制导入中心的各项资源限制。合理的限制可以防止单次导入任务占用过多资源。",
+        "description": "导入限制",
+        "hint": "控制导入功能的各项限制，防止一次导入太多内容把系统拖慢。",
         "items": {
           "max_queue_size": {
             "type": "int",
-            "description": "导入任务队列上限",
-            "hint": "同时等待处理的导入任务最大数量。超过上限后新的导入请求会被拒绝，需等待前面的任务完成。建议范围 5~50。",
+            "description": "最大排队任务数",
+            "hint": "同时能有多少个导入任务排队等待处理。超过后需要等前面的完成才能提交新的。建议 5~50。",
             "default": 20
           },
           "max_files_per_task": {
             "type": "int",
-            "description": "单次导入最大文件数",
-            "hint": "单个导入任务中允许包含的最大文件数量。建议范围 10~500。",
+            "description": "单次导入最多几个文件",
+            "hint": "一次导入操作最多允许包含多少个文件。建议 10~500。",
             "default": 200
           },
           "max_file_size_mb": {
             "type": "int",
             "description": "单个文件大小上限（MB）",
-            "hint": "单个导入文件的最大大小限制，单位为 MB。过大的文件会在解析时消耗大量内存。建议范围 5~100。",
+            "hint": "单个文件最大多少 MB。太大的文件解析时会很慢且占内存。建议 5~100。",
             "default": 20
           },
           "max_paste_chars": {
             "type": "int",
-            "description": "粘贴导入最大字符数",
-            "hint": "通过粘贴方式导入时，允许的最大文本字符数。建议范围 10000~1000000。",
+            "description": "粘贴导入最大字数",
+            "hint": "通过粘贴文本方式导入时，最多允许多少个字符。",
             "default": 200000
           },
           "default_file_concurrency": {
             "type": "int",
-            "description": "文件并发处理数（预留）",
-            "hint": "同时处理的文件数量上限。此参数为预留功能，当前版本可保持默认值。",
+            "description": "同时处理文件数（预留功能）",
+            "hint": "此功能暂未启用，保持默认即可。",
             "default": 2
           },
           "default_chunk_concurrency": {
             "type": "int",
-            "description": "分块并发处理数（预留）",
-            "hint": "单个文件拆分为多个块后的并发处理数量。此参数为预留功能，当前版本可保持默认值。",
+            "description": "分块并发数（预留功能）",
+            "hint": "此功能暂未启用，保持默认即可。",
             "default": 4
           },
           "path_aliases": {
             "type": "object",
-            "description": "目录扫描路径别名",
-            "hint": "定义导入中心可扫描的目录别名映射。出于安全考虑，导入中心只能访问这里定义的路径别名对应的目录，不允许扫描任意路径。路径相对于插件的数据存储目录。",
+            "description": "可扫描的目录",
+            "hint": "定义导入功能可以扫描哪些目录。出于安全考虑，只能访问这里定义的目录，不能扫描任意路径。路径相对于插件的数据存储目录。",
             "items": {
               "raw": {
                 "type": "string",
-                "description": "原始文件目录别名",
-                "hint": "对应数据存储目录下的 raw 子目录，可在导入中心中通过 raw 别名访问。可修改为其他子目录名。",
+                "description": "原始文件目录",
+                "hint": "对应数据目录下的 raw 子文件夹。你可以把要导入的文件放到这个文件夹里，然后在导入面板中选择它。",
                 "default": "raw"
               },
               "plugin_data": {
                 "type": "string",
-                "description": "插件数据目录别名",
-                "hint": "对应数据存储目录的根目录（.）。可修改为其他子目录名以限制扫描范围。",
+                "description": "插件数据目录",
+                "hint": "对应插件的整个数据存储目录。默认值「.」表示根目录。可以改为子目录名来限制可扫描的范围。",
                 "default": "."
               }
             }
@@ -605,55 +623,63 @@
   },
   "episode": {
     "type": "object",
-    "description": "Episode 时间片段 —— 从聊天段落异步生成可检索事件摘要",
-    "hint": "新版 A_memorix 能按 source 生成 Episode，用于 /v1/query/episode 和聚合检索。",
+    "description": "事件摘要 —— 从聊天段落异步生成可检索事件摘要",
+    "hint": "机器人会自动把聊天内容按话题分段，生成「事件摘要」。例如问「上周发生了什么」时，机器人能给出完整的事件概述，而不是零散的句子。",
     "items": {
       "enabled": {
         "type": "bool",
-        "description": "启用 Episode 查询/存储能力",
+        "description": "启用事件摘要",
+        "hint": "关闭后不再生成和搜索事件摘要。",
         "default": true
       },
       "generation_enabled": {
         "type": "bool",
-        "description": "启用后台 Episode 自动生成",
+        "description": "后台自动生成事件摘要",
+        "hint": "关闭后不再自动生成新的事件摘要，但已有的摘要仍可被搜索到。",
         "default": true
       },
       "generation_interval_seconds": {
         "type": "int",
-        "description": "Episode 后台生成轮询间隔",
+        "description": "后台检查间隔（秒）",
+        "hint": "后台每隔多少秒检查一次是否有新的聊天内容需要生成事件摘要。",
         "default": 30
       },
       "generation_batch_size": {
         "type": "int",
-        "description": "每轮处理 source 数量",
+        "description": "每次处理的聊天来源数",
+        "hint": "每轮检查时最多处理多少个不同的聊天来源（如不同的群）。",
         "default": 20
       },
       "max_retry": {
         "type": "int",
-        "description": "失败重试次数",
+        "description": "生成失败重试次数",
+        "hint": "事件摘要生成失败后最多重试几次。",
         "default": 3
       },
       "segmentation_model": {
         "type": "string",
-        "description": "Episode 切分模型名，auto 表示跟随当前 LLM Provider",
+        "description": "话题分段使用的模型",
+        "hint": "auto（推荐）：使用当前默认的 AI 模型。也可以填写具体的模型名来指定。",
         "default": "auto"
       }
     }
   },
   "filter": {
     "type": "object",
-    "description": "聊天过滤 —— 控制哪些 stream/group/user 可参与检索与批量总结",
-    "hint": "whitelist 且 chats 为空表示全部拒绝；blacklist 且 chats 为空表示全部放行。",
+    "description": "聊天过滤",
+    "hint": "控制哪些群聊/私聊可以使用记忆功能。可以只允许特定聊天使用（白名单模式），或者排除某些聊天（黑名单模式）。",
     "items": {
       "enabled": {
         "type": "bool",
         "description": "启用聊天过滤",
+        "hint": "关闭后所有聊天都可以使用记忆功能，不做任何限制。",
         "default": true
       },
       "mode": {
         "type": "string",
         "description": "过滤模式",
-        "default": "whitelist",
+        "hint": "whitelist（白名单）：只有下面列出的聊天能使用记忆功能，其他一律不行。blacklist（黑名单）：下面列出的聊天不能用，其他都能用。",
+        "default": "blacklist",
         "options": [
           "whitelist",
           "blacklist"
@@ -661,7 +687,8 @@
       },
       "chats": {
         "type": "list",
-        "description": "匹配项，如 group:123、user:456、stream:xxx",
+        "description": "聊天列表",
+        "hint": "填写要允许/排除的聊天标识。格式示例：group:123456（群号）、user:789012（用户号）、stream:xxx（频道标识）。",
         "default": []
       }
     }
