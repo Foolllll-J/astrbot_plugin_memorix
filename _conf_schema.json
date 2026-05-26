@@ -195,56 +195,6 @@
             }
           }
         }
-      },
-      "search": {
-        "type": "object",
-        "description": "检索后处理与关系意图增强",
-        "hint": "控制智能兜底、结果去重、关系意图召回和图谱邻接召回。",
-        "items": {
-          "source_empty_fallback": {
-            "type": "object",
-            "description": "严格 source 过滤为空时是否回退到未过滤结果",
-            "items": {
-              "enabled": {
-                "type": "bool",
-                "description": "启用 source 空结果回退",
-                "default": true
-              }
-            }
-          },
-          "relation_intent": {
-            "type": "object",
-            "description": "关系型问题召回增强",
-            "items": {
-              "enabled": {
-                "type": "bool",
-                "description": "启用关系意图识别",
-                "default": true
-              },
-              "force_relation_sparse": {
-                "type": "bool",
-                "description": "关系意图下强制补充稀疏召回",
-                "default": true
-              }
-            }
-          },
-          "graph_recall": {
-            "type": "object",
-            "description": "图谱邻接/路径召回",
-            "items": {
-              "enabled": {
-                "type": "bool",
-                "description": "启用图谱关系召回",
-                "default": true
-              },
-              "max_hop": {
-                "type": "int",
-                "description": "最大跳数",
-                "default": 1
-              }
-            }
-          }
-        }
       }
     }
   },
@@ -294,37 +244,6 @@
         "description": "强化自动保护时长（小时）",
         "hint": "通过 WebUI 或 maintain_memory 工具强化记忆后，该记忆在此时长内不会被衰减或剪枝。建议范围 6~168 小时。",
         "default": 24.0
-      },
-      "orphan": {
-        "type": "object",
-        "description": "孤儿节点回收 —— 管理失去所有关联关系的实体和段落",
-        "hint": "当一个实体或段落的所有关联关系都被剪枝后，它就成为「孤儿节点」。这些节点会经过保留期和宽限期后被物理清理，支持在宽限期内通过 WebUI 或 maintain_memory 工具恢复。",
-        "items": {
-          "enable_soft_delete": {
-            "type": "bool",
-            "description": "启用软删除回收流程",
-            "hint": "开启后，孤儿节点会先被标记为「软删除」状态（可恢复），经过宽限期后才物理删除。关闭则直接永久删除，无法恢复。建议保持开启。",
-            "default": true
-          },
-          "entity_retention_days": {
-            "type": "float",
-            "description": "孤儿实体保留天数",
-            "hint": "实体（如人名、地点、概念等）失去所有关系后，保留多少天才标记为软删除。建议范围 3~30 天。",
-            "default": 7.0
-          },
-          "paragraph_retention_days": {
-            "type": "float",
-            "description": "孤儿段落保留天数",
-            "hint": "段落（具体的记忆内容）失去所有关系后，保留多少天才标记为软删除。建议范围 3~30 天。",
-            "default": 7.0
-          },
-          "sweep_grace_hours": {
-            "type": "float",
-            "description": "软删除宽限期（小时）",
-            "hint": "软删除标记后，等待多少小时才真正物理清理。在此期间可通过 WebUI 或 maintain_memory 工具恢复。建议范围 12~72 小时。",
-            "default": 24.0
-          }
-        }
       }
     }
   },
@@ -613,12 +532,6 @@
     "description": "AstrBot Dashboard 内嵌管理界面（WebUI）—— 可视化浏览和管理记忆数据",
     "hint": "Memorix 通过 AstrBot Plugin Pages 提供内嵌控制台。可在 AstrBot Dashboard 的插件详情页打开“Memorix 控制台”。",
     "items": {
-      "enabled": {
-        "type": "bool",
-        "description": "启用 Dashboard 内嵌 WebUI 接口",
-        "hint": "关闭后仍可能看到插件页入口，但页面请求会被拒绝；通常保持开启。",
-        "default": true
-      },
       "scope": {
         "type": "string",
         "description": "WebUI 绑定的作用域",
@@ -715,11 +628,6 @@
         "type": "int",
         "description": "任务队列最大长度",
         "default": 1024
-      },
-      "summary_poll_interval_seconds": {
-        "type": "int",
-        "description": "总结任务轮询间隔",
-        "default": 1
       }
     }
   },
@@ -752,21 +660,6 @@
         "type": "int",
         "description": "失败重试次数",
         "default": 3
-      },
-      "window_seconds": {
-        "type": "int",
-        "description": "默认 Episode 时间窗口秒数",
-        "default": 3600
-      },
-      "min_group_size": {
-        "type": "int",
-        "description": "最小消息聚合数",
-        "default": 2
-      },
-      "max_group_size": {
-        "type": "int",
-        "description": "最大消息聚合数",
-        "default": 24
       },
       "segmentation_model": {
         "type": "string",
