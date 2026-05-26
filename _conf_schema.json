@@ -693,22 +693,5 @@
         "default": []
       }
     }
-  },
-  "routing": {
-    "type": "object",
-    "description": "运行时路由与去重",
-    "hint": "用于 A_memorix 检索请求去重与兼容路由控制。",
-    "items": {
-      "enable_request_dedup": {
-        "type": "bool",
-        "description": "启用短时间相同检索请求去重",
-        "default": true
-      },
-      "request_dedup_ttl_seconds": {
-        "type": "float",
-        "description": "去重缓存 TTL 秒数",
-        "default": 2.0
-      }
-    }
   }
 }
