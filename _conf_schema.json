@@ -357,12 +357,6 @@
         "hint": "开启后，普通聊天会自动进入 Memorix transcript。关闭后仅保留 LLM tools 手动写入。",
         "default": true
       },
-      "skip_empty_text": {
-        "type": "bool",
-        "description": "忽略空消息",
-        "hint": "清洗后为空的消息不会写入 transcript 或长期记忆。",
-        "default": true
-      },
       "skip_command_messages": {
         "type": "bool",
         "description": "忽略命令消息",
