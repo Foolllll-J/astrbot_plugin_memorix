@@ -280,7 +280,7 @@
       "enabled": {
         "type": "bool",
         "description": "启用总结功能",
-        "hint": "关闭后所有总结相关功能（手动/定时/自动）都将停用。记忆系统仍会记录原始消息，但不会生成摘要知识。",
+        "hint": "关闭后所有总结相关功能都将停用。记忆系统仍会记录原始消息，但不会生成摘要知识。",
         "default": true
       },
       "source_mode": {
@@ -401,9 +401,9 @@
           },
           "drop_ephemeral_transcript": {
             "type": "bool",
-            "description": "丢弃寒暄/纯占位 transcript",
-            "hint": "关闭时仍保留流水，只是不直写长期记忆；开启后短寒暄和纯占位消息会直接跳过。",
-            "default": false
+            "description": "丢弃纯占位 transcript",
+            "hint": "关闭时仍保留流水，只是不直写长期记忆；开启后纯占位消息会直接跳过。",
+            "default": true
           },
           "auto_direct_min_chars": {
             "type": "int",
