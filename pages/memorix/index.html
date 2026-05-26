@@ -1033,6 +1033,11 @@
         flex: 1;
       }
 
+      .toolbar .graph-scope-field {
+        flex: 1.35 1 190px;
+        min-width: 190px;
+      }
+
       .graph-zoom {
         flex: 1 1 300px;
         max-width: 390px;
@@ -1907,9 +1912,11 @@
                       <label>搜索节点</label>
                       <input id="graph-search" class="input" placeholder="输入实体名称" list="graph-node-suggestions" />
                     </div>
-                    <div class="field">
-                      <label>来源过滤</label>
-                      <input id="graph-source" class="input" placeholder="来源名称" />
+                    <div class="field graph-scope-field">
+                      <label>群过滤</label>
+                      <select id="graph-scope" class="select">
+                        <option value="">自动 / 最近</option>
+                      </select>
                     </div>
                     <div class="field">
                       <label>信息密度</label>
@@ -2231,6 +2238,9 @@
           zoom: 1,
           userZoomed: false,
           autoFitTimer: null,
+          currentScope: "",
+          scopeFocus: "",
+          scopeOptions: [],
           sourceFocus: "",
           highlightedNode: "",
           dictionaryTab: "nodes",
@@ -2927,10 +2937,52 @@
         fitGraphView(true);
       }
 
+      function graphScopeLabel(scopeKey) {
+        const key = String(scopeKey || "");
+        const known = (state.graph.scopeOptions || []).find((item) => item.value === key);
+        if (known?.label) return known.label;
+        const parts = key.split(":");
+        if (parts.length >= 3 && parts[1] === "group") return `${parts[0]}:${parts.slice(2).join(":")}`;
+        return key || "自动 / 最近";
+      }
+
+      function renderGraphScopeOptions(scopes, current) {
+        const select = $("graph-scope");
+        if (!select) return;
+        const selected = state.graph.scopeFocus || select.value || "";
+        const items = Array.isArray(scopes) ? scopes : [];
+        const options = [
+          `<option value="">自动 / 最近${current ? `（${escapeHtml(graphScopeLabel(current))}）` : ""}</option>`,
+          ...items.map((item) => {
+            const value = String(item?.value || "");
+            const label = String(item?.label || graphScopeLabel(value));
+            return `<option value="${attrValue(value)}">${escapeHtml(label)}</option>`;
+          }),
+        ];
+        select.innerHTML = options.join("");
+        select.value = items.some((item) => item?.value === selected) ? selected : "";
+        state.graph.scopeFocus = select.value;
+      }
+
+      async function loadGraphScopes() {
+        const data = await request("get", "/api/scopes");
+        state.graph.currentScope = String(data.current || "");
+        state.graph.scopeOptions = Array.isArray(data.scopes) ? data.scopes : [];
+        renderGraphScopeOptions(state.graph.scopeOptions, state.graph.currentScope);
+        updateGraphToolState();
+        return data;
+      }
+
       function updateGraphToolState() {
+        const scope = state.graph.scopeFocus || "";
         const source = state.graph.sourceFocus || "";
-        $("graph-filter-chip").textContent = source ? `source: ${source}` : "全部图谱";
-        $("graph-filter-chip").className = `tag ${source ? "ok" : ""}`;
+        const autoScope = state.graph.currentScope ? `scope: ${graphScopeLabel(state.graph.currentScope)}（自动）` : "自动 scope";
+        $("graph-filter-chip").textContent = source
+          ? `source: ${source}`
+          : scope
+            ? `scope: ${graphScopeLabel(scope)}`
+            : autoScope;
+        $("graph-filter-chip").className = `tag ${(source || scope || state.graph.currentScope) ? "ok" : ""}`;
         $("graph-sim-toggle").textContent = state.graph.simulationRunning ? "暂停模拟" : "继续布局";
         $("graph-sim-toggle").classList.toggle("active", !state.graph.simulationRunning);
         $("graph-perf-toggle").classList.toggle("active", state.graph.lowPerf);
@@ -3416,11 +3468,12 @@
         clearGraphAutoFit();
         applyGraphResponsiveOptions();
         const density = $("graph-density").value || "0.82";
-        const source = $("graph-source").value.trim();
+        const scope = $("graph-scope")?.value?.trim() || "";
+        const source = state.graph.sourceFocus || "";
         const exclude = source ? false : $("graph-leaf").value === "true";
-        state.graph.sourceFocus = source;
+        state.graph.scopeFocus = scope;
         state.graph.highlightedNode = "";
-        const url = `/api/graph?exclude_leaf=${exclude}&density=${encodeURIComponent(density)}${source ? `&source=${encodeURIComponent(source)}` : ""}`;
+        const url = `/api/graph?exclude_leaf=${exclude}&density=${encodeURIComponent(density)}${scope ? `&_scope=${encodeURIComponent(scope)}` : ""}${source ? `&source=${encodeURIComponent(source)}` : ""}`;
         const data = await request("get", url);
         state.graph.rawNodes = data.nodes || [];
         state.graph.rawEdges = data.edges || [];
@@ -3731,7 +3784,7 @@
       }
 
       async function focusGraphSource(source) {
-        $("graph-source").value = source || "";
+        state.graph.sourceFocus = source || "";
         await loadGraph();
         if (source) toast(`已聚焦 source: ${source}`);
       }
@@ -3740,7 +3793,7 @@
         if (!source || !confirm(`删除 source ${source}？`)) return;
         await request("post", "/api/source/batch_delete", { source });
         toast("source 已删除");
-        if ($("graph-source").value.trim() === source) $("graph-source").value = "";
+        if (state.graph.sourceFocus === source) state.graph.sourceFocus = "";
         await loadGraph();
         await showGraphSourceBrowser();
       }
@@ -4238,6 +4291,7 @@
       }
 
       async function refreshAll() {
+        await loadGraphScopes().catch((error) => toast(errText(error)));
         const tasks = [loadConfig(), loadStats(), loadGraph(), loadRuntime(false), loadDashboardStatus()];
         await Promise.allSettled(tasks);
       }
@@ -4355,6 +4409,15 @@
         $("graph-fit").onclick = fitGraphByControl;
         $("graph-zoom").addEventListener("input", (event) => setGraphZoom(event.target.value, false));
         $("graph-search").addEventListener("keydown", (e) => { if (e.key === "Enter") focusGraphNode(); });
+        $("graph-scope").addEventListener("change", async (event) => {
+          state.graph.scopeFocus = event.target.value.trim();
+          state.graph.sourceFocus = "";
+          await loadGraph();
+          toast(state.graph.scopeFocus ? `已选择群：${graphScopeLabel(state.graph.scopeFocus)}` : "已切回自动 scope");
+        });
+        $("graph-scope").addEventListener("focus", () => {
+          loadGraphScopes().catch((error) => toast(errText(error)));
+        });
         $("query-run").onclick = runQuery;
         $("episode-load").onclick = loadEpisodes;
         $("episode-rebuild").onclick = rebuildEpisode;

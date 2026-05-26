@@ -148,7 +148,6 @@ def test_webui_bridge_preserves_frontend_errors():
     _install_quart_request({"method": "GET", "url": "/api/graph"})
     bridge = PluginPageWebUIBridge(
         runtime_manager=object(),
-        plugin_config={},
         scope_resolver=lambda: "default",
     )
 

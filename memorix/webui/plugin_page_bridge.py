@@ -7,7 +7,7 @@ import datetime
 import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, Set
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 from astrbot.api import logger
@@ -227,20 +227,14 @@ class PluginPageWebUIBridge:
         self,
         *,
         runtime_manager: ScopeRuntimeManager,
-        plugin_config: Dict[str, Any],
         scope_resolver: Callable[[], str],
     ) -> None:
         self.runtime_manager = runtime_manager
-        self.plugin_config = plugin_config or {}
         self.scope_resolver = scope_resolver
         self._apps: Dict[str, _EmbeddedWebUIApp] = {}
         self._lock = asyncio.Lock()
 
     def register(self, context: Any, *, plugin_name: str) -> None:
-        if not self._is_enabled():
-            logger.info("[memorix] embedded WebUI disabled by config")
-            return
-
         register_web_api = getattr(context, "register_web_api", None)
         if not callable(register_web_api):
             logger.warning("[memorix] AstrBot context does not support plugin Web APIs; embedded WebUI disabled")
@@ -288,12 +282,13 @@ class PluginPageWebUIBridge:
             return jsonify({"status": "error", "message": str(exc)})
 
     async def dispatch(self, *, method: str, url: str, body: Any = None) -> Any:
-        if not self._is_enabled():
-            raise RuntimeError("embedded WebUI is disabled by config")
-
         method = self._normalize_method(method)
         target = self._normalize_url(url)
-        scope_key = self._resolve_scope_key()
+        if self._is_scope_options_request(target):
+            return self._scope_options()
+
+        target, scope_override = self._extract_scope_override(target)
+        scope_key = self._resolve_scope_key(scope_override)
         app = await self._get_app(scope_key)
 
         request_kwargs: Dict[str, Any] = {}
@@ -318,15 +313,60 @@ class PluginPageWebUIBridge:
             return response.json()
         return response.text
 
-    def _resolve_scope_key(self) -> str:
-        raw = str(self.scope_resolver() or "").strip()
+    def _resolve_scope_key(self, override: str = "") -> str:
+        raw = str(override or "").strip()
+        if not raw:
+            raw = str(self.scope_resolver() or "").strip()
         return raw or "default"
 
-    def _is_enabled(self) -> bool:
-        webui_config = self.plugin_config.get("webui", {})
-        if not isinstance(webui_config, dict):
-            return True
-        return bool(webui_config.get("enabled", True))
+    def _scope_options(self) -> Dict[str, Any]:
+        current = self._resolve_scope_key()
+        scope_keys: list[str] = []
+
+        def add_scope(value: str) -> None:
+            key = str(value or "").strip()
+            if key and key not in scope_keys:
+                scope_keys.append(key)
+
+        add_scope(current)
+        list_scope_keys = getattr(self.runtime_manager, "list_scope_keys", None)
+        available_scopes = list_scope_keys() if callable(list_scope_keys) else self.runtime_manager.get_known_scopes()
+        for key in available_scopes:
+            add_scope(key)
+
+        return {
+            "current": current,
+            "scopes": [
+                {"value": key, "label": self._format_scope_label(key)}
+                for key in scope_keys
+            ],
+        }
+
+    @staticmethod
+    def _format_scope_label(scope_key: str) -> str:
+        key = str(scope_key or "").strip()
+        parts = key.split(":")
+        if len(parts) >= 3 and parts[1] == "group":
+            return f"{parts[0]}:{':'.join(parts[2:])}"
+        return key or "default"
+
+    @staticmethod
+    def _is_scope_options_request(target: str) -> bool:
+        parts = urlsplit(target)
+        return parts.path == "/api/scopes"
+
+    @staticmethod
+    def _extract_scope_override(target: str) -> tuple[str, str]:
+        parts = urlsplit(target)
+        scope_override = ""
+        kept_params = []
+        for key, value in parse_qsl(parts.query, keep_blank_values=True):
+            if key == "_scope":
+                scope_override = value
+            else:
+                kept_params.append((key, value))
+        cleaned = urlunsplit(("", "", parts.path, urlencode(kept_params), parts.fragment))
+        return cleaned, scope_override
 
     @staticmethod
     def _normalize_method(method: str) -> str:

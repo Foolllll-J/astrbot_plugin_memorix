@@ -301,11 +301,7 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 
 插件只保留 **AstrBot Dashboard 内嵌页**：AstrBot `>=4.24.2` 可在插件详情页的 `Memorix 控制台` 页面中直接打开，接口经 AstrBot Dashboard 鉴权后转发到当前 Memorix runtime。
 
-内嵌页的 scope 选择：固定 `webui.scope` 时使用固定值；`auto/current/event` 时使用最近活跃 scope，首次打开且无活跃会话时回退到 `default`。
-
-| 配置项 | 类型 | 默认值 | 说明 |
-|---|---|---|---|
-| `webui.scope` | string | `auto` | WebUI 绑定作用域，`auto` 使用最近活跃作用域 |
+图谱页可通过 **群过滤** 下拉选择 scope，显示格式为 `平台:群号`，例如 `aiocqhttp:123456`。
 
 ### 导入中心（web.import）
 
@@ -380,7 +376,7 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 
 1. 先在目标群或私聊里发送一条普通消息，让插件记录并刷新当前作用域
 2. 在 AstrBot Dashboard 插件详情页打开 `Memorix 控制台`
-3. 如需固定查看范围，在插件配置里设置 `webui.scope`
+3. 在图谱页的 **群过滤** 下拉中选择对应的 `平台:群号`
 
 </details>
 

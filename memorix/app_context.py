@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -87,12 +88,15 @@ class ScopeRuntimeManager:
         self._runtimes: Dict[str, ScopeRuntime] = {}
         self._lock = asyncio.Lock()
 
-    def _scope_dir(self, scope_key: str) -> Path:
+    def _scope_base_dir(self) -> Path:
         data_root_raw = get_astrbot_data_path()
         data_root = Path(data_root_raw) if data_root_raw else (Path.cwd() / "data")
         base = data_root / "plugin_data" / self.plugin_name / "scopes"
         base.mkdir(parents=True, exist_ok=True)
-        base_resolved = base.resolve()
+        return base.resolve()
+
+    def _scope_dir(self, scope_key: str) -> Path:
+        base_resolved = self._scope_base_dir()
         safe_scope = self._sanitize_scope_dirname(scope_key)
         target = (base_resolved / safe_scope).resolve()
         try:
@@ -106,6 +110,7 @@ class ScopeRuntimeManager:
             )
             target = base_resolved / fallback
         target.mkdir(parents=True, exist_ok=True)
+        self._write_scope_manifest(target, scope_key)
         logger.debug("resolved scope dir: scope=%s dir=%s", target.name, target)
         return target
 
@@ -121,6 +126,59 @@ class ScopeRuntimeManager:
         if text in {"", ".", ".."}:
             return "default"
         return text[:128] or "default"
+
+    @staticmethod
+    def _write_scope_manifest(scope_dir: Path, scope_key: str) -> None:
+        try:
+            (scope_dir / ".scope.json").write_text(
+                json.dumps({"scope_key": str(scope_key or "default")}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception:
+            logger.debug("write scope manifest failed: scope=%s dir=%s", scope_key, scope_dir, exc_info=True)
+
+    @staticmethod
+    def _infer_scope_key_from_dirname(dirname: str) -> str:
+        name = str(dirname or "").strip()
+        if "_group_" in name:
+            platform, group_id = name.split("_group_", 1)
+            if platform and group_id:
+                return f"{platform}:group:{group_id}"
+        if "_user_" in name:
+            platform, user_id = name.split("_user_", 1)
+            if platform and user_id:
+                return f"{platform}:user:{user_id}"
+        return name
+
+    def list_scope_keys(self) -> list[str]:
+        keys: list[str] = []
+
+        def add(value: str) -> None:
+            key = str(value or "").strip()
+            if key and key not in keys:
+                keys.append(key)
+
+        for key in self._runtimes:
+            add(key)
+
+        try:
+            base = self._scope_base_dir()
+            for item in sorted(base.iterdir(), key=lambda path: path.name):
+                if not item.is_dir():
+                    continue
+                manifest = item / ".scope.json"
+                if manifest.exists():
+                    try:
+                        payload = json.loads(manifest.read_text(encoding="utf-8"))
+                        add(str(payload.get("scope_key", "") or ""))
+                        continue
+                    except Exception:
+                        logger.debug("read scope manifest failed: %s", manifest, exc_info=True)
+                add(self._infer_scope_key_from_dirname(item.name))
+        except Exception:
+            logger.debug("list scope keys failed", exc_info=True)
+
+        return keys
 
     def _build_scope_config(self, scope_key: str) -> Dict[str, Any]:
         cfg = _deep_merge(DEFAULT_CONFIG, self.plugin_config)

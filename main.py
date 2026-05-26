@@ -76,7 +76,6 @@ class MemorixPlugin(Star):
         self.admin_service = AdminService(self.runtime_manager)
         self.webui_page_bridge = PluginPageWebUIBridge(
             runtime_manager=self.runtime_manager,
-            plugin_config=self.config,
             scope_resolver=self._resolve_dashboard_webui_scope,
         )
 
@@ -111,10 +110,6 @@ class MemorixPlugin(Star):
         return self.scope_router.resolve(event)
 
     def _resolve_dashboard_webui_scope(self) -> str:
-        configured = str(self.config.get("webui", {}).get("scope", "auto") or "auto").strip()
-        mode = configured.lower()
-        if mode not in {"", "auto", "current", "event"}:
-            return configured
         known_scopes = self.runtime_manager.get_known_scopes()
         if known_scopes:
             return str(known_scopes[-1])

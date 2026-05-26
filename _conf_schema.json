@@ -570,19 +570,6 @@
       }
     }
   },
-  "webui": {
-    "type": "object",
-    "description": "管理面板",
-    "hint": "Memorix 在 AstrBot 控制台中内置了一个管理页面，可以可视化地浏览和管理记忆数据。",
-    "items": {
-      "scope": {
-        "type": "string",
-        "description": "管理面板显示哪个范围的记忆",
-        "hint": "auto（推荐）：自动显示最近活跃的聊天的记忆。也可以手动填写指定的范围标识来固定只看某个群/用户的记忆。",
-        "default": "auto"
-      }
-    }
-  },
   "web": {
     "type": "object",
     "description": "知识导入",
