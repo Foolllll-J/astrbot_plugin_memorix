@@ -603,28 +603,6 @@
       }
     }
   },
-  "tasks": {
-    "type": "object",
-    "description": "后台任务队列 —— 控制导入、总结等异步 worker",
-    "hint": "A_memorix 新版任务管理配置。一般保持默认即可。",
-    "items": {
-      "import_workers": {
-        "type": "int",
-        "description": "导入 worker 数",
-        "default": 1
-      },
-      "summary_workers": {
-        "type": "int",
-        "description": "总结 worker 数",
-        "default": 1
-      },
-      "queue_maxsize": {
-        "type": "int",
-        "description": "任务队列最大长度",
-        "default": 1024
-      }
-    }
-  },
   "episode": {
     "type": "object",
     "description": "Episode 时间片段 —— 从聊天段落异步生成可检索事件摘要",
