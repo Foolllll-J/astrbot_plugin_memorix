@@ -241,3 +241,152 @@ def test_existing_version_db_still_gets_episode_position_patch(tmp_path):
         assert "position" in columns
     finally:
         reopened.close()
+
+
+def test_connect_patches_037_metadata_columns_and_summary_state(tmp_path):
+    db_path = tmp_path / "metadata.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        f"""
+        CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at REAL NOT NULL);
+        INSERT INTO schema_migrations(version, applied_at) VALUES ({SCHEMA_VERSION}, 1.0);
+        CREATE TABLE paragraphs (
+            hash TEXT PRIMARY KEY,
+            content TEXT NOT NULL,
+            vector_index INTEGER,
+            created_at REAL,
+            updated_at REAL,
+            metadata TEXT,
+            source TEXT,
+            word_count INTEGER,
+            event_time REAL,
+            event_time_start REAL,
+            event_time_end REAL,
+            time_granularity TEXT,
+            time_confidence REAL DEFAULT 1.0,
+            knowledge_type TEXT DEFAULT 'mixed',
+            is_permanent BOOLEAN DEFAULT 0,
+            last_accessed REAL,
+            access_count INTEGER DEFAULT 0,
+            is_deleted INTEGER DEFAULT 0,
+            deleted_at REAL
+        );
+        CREATE TABLE entities (
+            hash TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            vector_index INTEGER,
+            appearance_count INTEGER DEFAULT 1,
+            created_at REAL,
+            metadata TEXT,
+            is_deleted INTEGER DEFAULT 0,
+            deleted_at REAL
+        );
+        CREATE TABLE relations (
+            hash TEXT PRIMARY KEY,
+            subject TEXT NOT NULL,
+            predicate TEXT NOT NULL,
+            object TEXT NOT NULL,
+            vector_index INTEGER,
+            confidence REAL DEFAULT 1.0,
+            created_at REAL,
+            source_paragraph TEXT,
+            metadata TEXT
+        );
+        CREATE TABLE person_registry (
+            person_id TEXT PRIMARY KEY,
+            person_name TEXT,
+            nickname TEXT,
+            user_id TEXT,
+            platform TEXT,
+            group_nick_name TEXT,
+            memory_points TEXT,
+            last_know REAL,
+            metadata TEXT,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        );
+        CREATE TABLE transcript_sessions (
+            session_id TEXT PRIMARY KEY,
+            source TEXT,
+            metadata TEXT,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        );
+        CREATE TABLE transcript_messages (
+            message_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            ts REAL,
+            metadata TEXT,
+            created_at REAL NOT NULL
+        );
+        CREATE TABLE transcript_summary_state (
+            session_id TEXT PRIMARY KEY,
+            last_summary_at REAL,
+            last_message_created_at REAL,
+            updated_at REAL
+        );
+        INSERT INTO person_registry(
+            person_id, person_name, nickname, user_id, platform, group_nick_name,
+            memory_points, last_know, metadata, created_at, updated_at
+        ) VALUES ('p1', 'Alice', 'ali', 'u1', 'aiocqhttp', '["群名"]', '["point"]', 1.0, '{{"legacy":true}}', 1.0, 2.0);
+        INSERT INTO transcript_sessions(session_id, source, metadata, created_at, updated_at)
+        VALUES ('s1', 'chat', '{{"scope":"old"}}', 1.0, 2.0);
+        INSERT INTO transcript_messages(session_id, role, content, ts, metadata, created_at)
+        VALUES ('s1', 'user', 'hello', 1.5, '{{"kind":"old-msg"}}', 1.5);
+        INSERT INTO transcript_messages(session_id, role, content, ts, metadata, created_at)
+        VALUES ('s1', 'assistant', 'world', 2.5, '{{"kind":"old-reply"}}', 2.5);
+        INSERT INTO transcript_summary_state(session_id, last_summary_at, last_message_created_at, updated_at)
+        VALUES ('s1', 2.0, 2.5, 3.0);
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    store = MetadataStore(tmp_path)
+    store.connect()
+    try:
+        transcript_session_columns = {
+            row[1] for row in store._conn.execute("PRAGMA table_info(transcript_sessions)").fetchall()
+        }
+        transcript_message_columns = {
+            row[1] for row in store._conn.execute("PRAGMA table_info(transcript_messages)").fetchall()
+        }
+        transcript_state_columns = {
+            row[1] for row in store._conn.execute("PRAGMA table_info(transcript_summary_state)").fetchall()
+        }
+        person_columns = {row[1] for row in store._conn.execute("PRAGMA table_info(person_registry)").fetchall()}
+
+        assert "metadata_json" in transcript_session_columns
+        assert {"position", "metadata_json"} <= transcript_message_columns
+        assert {"last_task_id", "summary_count", "metadata_json", "created_at"} <= transcript_state_columns
+        assert "metadata_json" in person_columns
+
+        assert store.get_transcript_session("s1")["metadata"]["scope"] == "old"
+        messages = store.get_transcript_messages("s1")
+        assert [item["position"] for item in messages] == [0, 1]
+        assert [item["metadata"]["kind"] for item in messages] == ["old-msg", "old-reply"]
+        assert store.get_person_registry("p1")["metadata"]["legacy"] is True
+
+        state = store.get_transcript_summary_state("s1")
+        assert state["last_task_id"] == ""
+        assert state["summary_count"] == 0
+        assert state["created_at"] == 3.0
+
+        assert store.append_transcript_messages(
+            session_id="s1",
+            messages=[{"role": "assistant", "content": "hi", "created_at": 4.0}],
+        ) == 1
+        messages = store.get_transcript_messages("s1")
+        assert [item["position"] for item in messages] == [0, 1, 2]
+
+        updated_state = store.mark_transcript_summary_complete(
+            session_id="s1",
+            last_message_created_at=4.0,
+            task_id="task-2",
+        )
+        assert updated_state["last_task_id"] == "task-2"
+        assert updated_state["summary_count"] == 1
+    finally:
+        store.close()

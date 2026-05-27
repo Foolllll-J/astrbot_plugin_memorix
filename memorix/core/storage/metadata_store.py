@@ -20,6 +20,12 @@ from .knowledge_types import (
     resolve_stored_knowledge_type,
     validate_stored_knowledge_type,
 )
+from .schema_compat import (
+    ensure_person_registry_schema_compat,
+    ensure_table_column,
+    ensure_transcript_schema_compat,
+    table_columns,
+)
 
 logger = get_logger("A_Memorix.MetadataStore")
 
@@ -492,8 +498,7 @@ class MetadataStore:
 
     def _table_columns(self, cursor: sqlite3.Cursor, table_name: str) -> set[str]:
         """Return existing columns for a known SQLite table."""
-        cursor.execute(f"PRAGMA table_info({table_name})")
-        return {str(row[1]) for row in cursor.fetchall()}
+        return table_columns(cursor, table_name)
 
     def _ensure_table_column(
         self,
@@ -504,13 +509,13 @@ class MetadataStore:
         add_column_sql: str,
     ) -> None:
         """Add a missing column for legacy DBs where CREATE TABLE IF NOT EXISTS is not enough."""
-        if column_name in self._table_columns(cursor, table_name):
-            return
-        try:
-            cursor.execute(add_column_sql)
-            logger.info("Schema兼容迁移完成：已添加 %s.%s", table_name, column_name)
-        except sqlite3.OperationalError as e:
-            logger.warning("Schema兼容迁移失败（%s.%s）: %s", table_name, column_name, e)
+        ensure_table_column(
+            cursor,
+            table_name=table_name,
+            column_name=column_name,
+            add_column_sql=add_column_sql,
+            logger=logger,
+        )
 
     def _create_transcript_schema(self, cursor: sqlite3.Cursor) -> None:
         cursor.execute("""
@@ -534,20 +539,6 @@ class MetadataStore:
                 FOREIGN KEY (session_id) REFERENCES transcript_sessions(session_id) ON DELETE CASCADE
             )
         """)
-        self._ensure_table_column(
-            cursor,
-            table_name="transcript_messages",
-            column_name="position",
-            add_column_sql="ALTER TABLE transcript_messages ADD COLUMN position INTEGER NOT NULL DEFAULT 0",
-        )
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_transcript_messages_session_pos
-            ON transcript_messages(session_id, position)
-        """)
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_transcript_sessions_updated
-            ON transcript_sessions(updated_at DESC)
-        """)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS transcript_summary_state (
                 session_id TEXT PRIMARY KEY,
@@ -560,6 +551,15 @@ class MetadataStore:
                 updated_at REAL NOT NULL,
                 FOREIGN KEY (session_id) REFERENCES transcript_sessions(session_id) ON DELETE CASCADE
             )
+        """)
+        ensure_transcript_schema_compat(cursor, logger=logger)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_transcript_messages_session_pos
+            ON transcript_messages(session_id, position)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_transcript_sessions_updated
+            ON transcript_sessions(updated_at DESC)
         """)
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_transcript_summary_state_updated
@@ -738,6 +738,7 @@ class MetadataStore:
                 updated_at REAL NOT NULL
             )
         """)
+        ensure_person_registry_schema_compat(cursor, logger=logger)
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_person_registry_updated
             ON person_registry(updated_at DESC)
@@ -3184,7 +3185,9 @@ class MetadataStore:
             "SELECT COALESCE(MAX(position), -1) FROM transcript_messages WHERE session_id = ?",
             (token,),
         )
-        next_position = int(cursor.fetchone()[0] or -1) + 1
+        row = cursor.fetchone()
+        max_position = row[0] if row and row[0] is not None else -1
+        next_position = int(max_position) + 1
         now = datetime.now().timestamp()
         rows = []
         for item in messages:
