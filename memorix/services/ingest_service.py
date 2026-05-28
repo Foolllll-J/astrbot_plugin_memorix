@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 
 from ..app_context import ScopeRuntimeManager
 from ..core.storage import detect_knowledge_type
+from ..core.utils.entity_sanitizer import sanitize_extracted_entities_relations
 from ..core.utils.hash import compute_hash, normalize_text
 from .content_router import MemoryContentRouter
 
@@ -347,6 +348,11 @@ class IngestService:
         participant_tokens = self._as_list(participants)
         tag_tokens = self._as_list(tags)
         entity_tokens = list(dict.fromkeys([*self._as_list(entities), *person_tokens, *participant_tokens]))
+        entity_tokens, relation_rows = sanitize_extracted_entities_relations(
+            entity_tokens,
+            relations,
+            user_speakers=[*participant_tokens, *person_tokens],
+        )
         source = self._build_source(source_kind, stream_id, person_tokens)
         paragraph_meta = dict(metadata or {})
         paragraph_meta.update(
@@ -397,7 +403,7 @@ class IngestService:
         write_relation_vectors = bool(ctx.get_config("retrieval.relation_vectorization.enabled", True))
         relation_service = getattr(ctx, "relation_write_service", None)
         if relation_service is not None:
-            for row in [dict(item) for item in (relations or []) if isinstance(item, dict)]:
+            for row in relation_rows:
                 subject = str(row.get("subject", "") or "").strip()
                 predicate = str(row.get("predicate", "") or "").strip()
                 obj = str(row.get("object", "") or row.get("obj", "") or "").strip()

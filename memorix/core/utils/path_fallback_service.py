@@ -6,6 +6,7 @@ import hashlib
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ..retrieval.dual_path import RetrievalResult
+from .entity_sanitizer import is_role_placeholder_entity
 
 
 def extract_entities(query: str, graph_store: Any) -> List[str]:
@@ -38,6 +39,8 @@ def extract_entities(query: str, graph_store: Any) -> List[str]:
             span = " ".join(tokens[i : i + size])
             matched_node = graph_store.find_node(span, ignore_case=True)
             if not matched_node:
+                continue
+            if is_role_placeholder_entity(matched_node):
                 continue
             found_entities.add(matched_node)
             for idx in range(i, i + size):
@@ -162,4 +165,3 @@ def to_retrieval_results(paths: Sequence[Dict[str, Any]]) -> List[RetrievalResul
             )
         )
     return converted
-

@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from astrbot.api import logger
 from ..core.utils.hash import compute_hash
+from ..core.utils.entity_sanitizer import is_role_placeholder_entity
 from ..amemorix.settings import mask_sensitive
 
 class EdgeWeightUpdate(BaseModel):
@@ -190,6 +191,8 @@ class MemorixServer:
                         p_entities = self.plugin.metadata_store.get_paragraph_entities(p['hash'])
                         for e in p_entities:
                             raw_name = e['name']
+                            if is_role_placeholder_entity(raw_name):
+                                continue
                             lower_id = raw_name.strip().lower()
                             node_map[lower_id] = raw_name # 优先使用实体表中的名称作为显示标签
                             found_nodes.add(lower_id)
@@ -198,6 +201,8 @@ class MemorixServer:
                         p_relations = self.plugin.metadata_store.get_paragraph_relations(p['hash'])
                         for r in p_relations:
                             s_raw, t_raw = r['subject'], r['object']
+                            if is_role_placeholder_entity(s_raw) or is_role_placeholder_entity(t_raw):
+                                continue
                             s_id, t_id = s_raw.strip().lower(), t_raw.strip().lower()
                             
                             # 如果不存在则更新标签（优先使用实体表，关系原始文本作为备选）
@@ -255,12 +260,21 @@ class MemorixServer:
             if self.plugin.graph_store is None:
                 raise HTTPException(status_code=503, detail="Graph store not initialized")
             
-            node_names = self.plugin.graph_store.get_nodes()
+            node_names = [
+                name
+                for name in self.plugin.graph_store.get_nodes()
+                if not is_role_placeholder_entity(name)
+            ]
             
             # --- 智能显著性过滤 (Saliency Filtering) ---
             if exclude_leaf:
                 # 1. 获取 PageRank 得分
-                scores = self.plugin.graph_store.get_saliency_scores()
+                raw_scores = self.plugin.graph_store.get_saliency_scores() or {}
+                scores = {
+                    node: score
+                    for node, score in raw_scores.items()
+                    if not is_role_placeholder_entity(node)
+                }
                 if not scores:
                     filtered_nodes = node_names
                 else:

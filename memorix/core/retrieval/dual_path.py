@@ -15,6 +15,7 @@ import numpy as np
 from ...amemorix.common.logging import get_logger
 from ..storage import VectorStore, GraphStore, MetadataStore
 from ..embedding import EmbeddingAPIAdapter
+from ..utils.entity_sanitizer import is_role_placeholder_entity
 from ..utils.matcher import AhoCorasick
 from ..utils.time_parser import format_timestamp
 from .graph_relation_recall import GraphRelationRecallConfig, GraphRelationRecallService
@@ -1720,7 +1721,11 @@ class DualPathRetriever:
             实体字典 {实体名: 权重}
         """
         # 获取所有实体
-        all_entities = self.graph_store.get_nodes()
+        all_entities = [
+            node
+            for node in self.graph_store.get_nodes()
+            if not is_role_placeholder_entity(node)
+        ]
         if not all_entities:
             return {}
 

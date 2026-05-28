@@ -19,6 +19,11 @@ from ..storage import (
     VectorStore,
     get_knowledge_type_from_string,
 )
+from .entity_sanitizer import (
+    collect_user_speakers,
+    message_speaker_identity,
+    sanitize_extracted_entities_relations,
+)
 
 logger = get_logger("A_Memorix.SummaryImporter")
 
@@ -46,7 +51,9 @@ SUMMARY_PROMPT_TEMPLATE = """
 1. 总结应具有叙事性，能够作为长程记忆的一部分。
 2. 直接使用实体的实际名称，不要使用 e1/e2 等代号。
 3. 实体与关系尽量使用原文措辞。
-4. 如果没有关系，relations 返回空数组。
+4. 聊天角色标签（user/assistant/system/tool/用户/助手）不是实体；如果无法确定具体说话人，不要输出“用户”作为实体或关系主体。
+5. 如果 user 消息前缀包含具体昵称或 ID，请将“我/我的”等第一人称事实归因于该具体说话人。
+6. 如果没有关系，relations 返回空数组。
 """
 
 
@@ -81,14 +88,20 @@ class SummaryImporter:
                 return default
         return current
 
-    def _build_chat_text(self, messages: List[Dict[str, Any]]) -> str:
+    def _build_chat_text(self, messages: List[Dict[str, Any]], *, bot_name: str = "") -> str:
         lines: List[str] = []
         for item in messages:
             role = str(item.get("role", "user") or "user")
             content = str(item.get("content", "") or "").strip()
             if not content:
                 continue
-            lines.append(f"{role}: {content}")
+            speaker = ""
+            if role.strip().lower() == "user":
+                speaker = message_speaker_identity(item)
+            elif role.strip().lower() == "assistant":
+                speaker = str(bot_name or "").strip()
+            label = speaker or role
+            lines.append(f"{label}: {content}")
         return "\n".join(lines)
 
     def _transcript_session_metadata(self, session_id: str) -> Dict[str, Any]:
@@ -116,7 +129,7 @@ class SummaryImporter:
         if not messages:
             return self._fallback_summary(messages)
 
-        history = self._build_chat_text(messages)
+        history = self._build_chat_text(messages, bot_name=bot_name)
         prompt = SUMMARY_PROMPT_TEMPLATE.format(
             bot_name=bot_name or "助手",
             personality_context=personality_context,
@@ -177,6 +190,13 @@ class SummaryImporter:
             summary = str(payload.get("summary", "") or "").strip()
             entities = payload.get("entities", [])
             relations = payload.get("relations", [])
+            user_speakers = collect_user_speakers(transcript_messages)
+            entities, relations = sanitize_extracted_entities_relations(
+                entities,
+                relations,
+                user_speakers=user_speakers,
+                bot_name=bot_name,
+            )
             if not summary:
                 return False, "总结为空"
 
