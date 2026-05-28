@@ -349,12 +349,21 @@ class PersonFactWritebackService:
             time_meta={"event_time": timestamp},
         )
         try:
-            if paragraph_hash not in ctx.vector_store:
+            paragraph_vector_service = getattr(ctx, "paragraph_vector_service", None)
+            if paragraph_vector_service is not None and hasattr(paragraph_vector_service, "ensure_paragraph_vector"):
+                await paragraph_vector_service.ensure_paragraph_vector(paragraph_hash, content)
+            elif paragraph_hash not in ctx.vector_store:
                 embedding = await ctx.embedding_manager.encode(content)
                 if getattr(embedding, "ndim", 1) == 1:
                     embedding = embedding.reshape(1, -1)
                 ctx.vector_store.add(vectors=embedding, ids=[paragraph_hash])
+                updater = getattr(ctx.metadata_store, "update_vector_index", None)
+                if callable(updater):
+                    updater("paragraph", paragraph_hash, 1)
         except Exception as exc:
+            updater = getattr(ctx.metadata_store, "update_vector_index", None)
+            if callable(updater):
+                updater("paragraph", paragraph_hash, -1)
             logger.debug("[memorix] person fact vector write failed: %s", exc, exc_info=True)
 
         for entity in dict.fromkeys([person_id, person_name]):

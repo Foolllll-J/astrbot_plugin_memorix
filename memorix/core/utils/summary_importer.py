@@ -19,11 +19,7 @@ from ..storage import (
     VectorStore,
     get_knowledge_type_from_string,
 )
-from .entity_sanitizer import (
-    collect_user_speakers,
-    message_speaker_identity,
-    sanitize_extracted_entities_relations,
-)
+from .paragraph_vector_service import ParagraphVectorWriteService
 
 logger = get_logger("A_Memorix.SummaryImporter")
 
@@ -51,10 +47,50 @@ SUMMARY_PROMPT_TEMPLATE = """
 1. 总结应具有叙事性，能够作为长程记忆的一部分。
 2. 直接使用实体的实际名称，不要使用 e1/e2 等代号。
 3. 实体与关系尽量使用原文措辞。
-4. 聊天角色标签（user/assistant/system/tool/用户/助手）不是实体；如果无法确定具体说话人，不要输出“用户”作为实体或关系主体。
-5. 如果 user 消息前缀包含具体昵称或 ID，请将“我/我的”等第一人称事实归因于该具体说话人。
-6. 如果没有关系，relations 返回空数组。
+4. 如果没有关系，relations 返回空数组。
 """
+
+
+def _message_metadata(message: Dict[str, Any]) -> Dict[str, Any]:
+    metadata = message.get("metadata")
+    if not isinstance(metadata, dict):
+        return {}
+    nested = metadata.get("metadata")
+    if isinstance(nested, dict):
+        merged = dict(metadata)
+        merged.update(nested)
+        return merged
+    return metadata
+
+
+def _message_speaker_identity(message: Dict[str, Any]) -> str:
+    metadata = _message_metadata(message)
+    for key in ("sender_name", "person_name", "nickname", "group_nick_name"):
+        candidate = str(message.get(key) or metadata.get(key) or "").strip()
+        if candidate:
+            return candidate
+
+    platform = str(message.get("platform") or metadata.get("platform") or "").strip()
+    sender_id = str(
+        message.get("sender_id")
+        or message.get("user_id")
+        or metadata.get("sender_id")
+        or metadata.get("user_id")
+        or ""
+    ).strip()
+    if sender_id:
+        return f"{platform}:{sender_id}" if platform else sender_id
+    return ""
+
+
+def _coerce_timestamp(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        ts = float(value)
+    except (TypeError, ValueError):
+        return None
+    return ts if ts > 0 else None
 
 
 class SummaryImporter:
@@ -78,6 +114,16 @@ class SummaryImporter:
             if isinstance(self.plugin_config, dict)
             else None
         )
+        configured_paragraph_vector_service = (
+            self.plugin_config.get("paragraph_vector_service")
+            if isinstance(self.plugin_config, dict)
+            else None
+        )
+        self.paragraph_vector_service = configured_paragraph_vector_service or ParagraphVectorWriteService(
+            metadata_store=metadata_store,
+            vector_store=vector_store,
+            embedding_manager=embedding_manager,
+        )
 
     def _cfg(self, key: str, default: Any = None) -> Any:
         current: Any = self.plugin_config if isinstance(self.plugin_config, dict) else {}
@@ -97,12 +143,50 @@ class SummaryImporter:
                 continue
             speaker = ""
             if role.strip().lower() == "user":
-                speaker = message_speaker_identity(item)
+                speaker = _message_speaker_identity(item)
             elif role.strip().lower() == "assistant":
                 speaker = str(bot_name or "").strip()
             label = speaker or role
             lines.append(f"{label}: {content}")
         return "\n".join(lines)
+
+    def _derive_transcript_time_meta(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+        event_times: List[float] = []
+        fallback_times: List[float] = []
+        for item in messages:
+            if not isinstance(item, dict):
+                continue
+            metadata = _message_metadata(item)
+            explicit_ts = None
+            for key in ("timestamp", "time", "ts"):
+                explicit_ts = _coerce_timestamp(item.get(key))
+                if explicit_ts is None:
+                    explicit_ts = _coerce_timestamp(metadata.get(key))
+                if explicit_ts is not None:
+                    break
+            if explicit_ts is not None:
+                event_times.append(explicit_ts)
+                continue
+            created_at = _coerce_timestamp(item.get("created_at"))
+            if created_at is not None:
+                fallback_times.append(created_at)
+
+        times = event_times or fallback_times
+        if not times:
+            return {}
+
+        start = min(times)
+        end = max(times)
+        confidence = 0.95 if event_times else 0.6
+        time_meta: Dict[str, Any] = {
+            "event_time_start": start,
+            "event_time_end": end,
+            "time_granularity": "minute",
+            "time_confidence": confidence,
+        }
+        if abs(end - start) <= 1.0:
+            time_meta["event_time"] = end
+        return time_meta
 
     def _transcript_session_metadata(self, session_id: str) -> Dict[str, Any]:
         getter = getattr(self.metadata_store, "get_transcript_session", None)
@@ -190,13 +274,7 @@ class SummaryImporter:
             summary = str(payload.get("summary", "") or "").strip()
             entities = payload.get("entities", [])
             relations = payload.get("relations", [])
-            user_speakers = collect_user_speakers(transcript_messages)
-            entities, relations = sanitize_extracted_entities_relations(
-                entities,
-                relations,
-                user_speakers=user_speakers,
-                bot_name=bot_name,
-            )
+            time_meta = self._derive_transcript_time_meta(transcript_messages)
             if not summary:
                 return False, "总结为空"
 
@@ -205,6 +283,7 @@ class SummaryImporter:
                 entities=entities if isinstance(entities, list) else [],
                 relations=relations if isinstance(relations, list) else [],
                 stream_id=session["session_id"],
+                time_meta=time_meta or None,
             )
 
             self.vector_store.save()
@@ -259,8 +338,7 @@ class SummaryImporter:
             time_meta=time_meta,
         )
 
-        embedding = await self.embedding_manager.encode(summary)
-        self.vector_store.add(vectors=embedding.reshape(1, -1), ids=[hash_value])
+        await self.paragraph_vector_service.ensure_paragraph_vector(hash_value, summary)
 
         if entities:
             self.graph_store.add_nodes([str(e) for e in entities if str(e).strip()])

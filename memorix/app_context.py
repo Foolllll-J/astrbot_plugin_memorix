@@ -205,6 +205,10 @@ class ScopeRuntimeManager:
         adapter = LocalEmbeddingAdapter(dimension=dimension)
         runtime.context.embedding_manager = adapter
         runtime.context.retriever.embedding_manager = adapter
+        if hasattr(runtime.context, "paragraph_vector_service"):
+            runtime.context.paragraph_vector_service.embedding_manager = adapter
+        if hasattr(runtime.context, "relation_write_service"):
+            runtime.context.relation_write_service.embedding_manager = adapter
         if hasattr(runtime.context, "person_profile_service"):
             runtime.context.person_profile_service.embedding_manager = adapter
         logger.info("local embedding fallback enabled: scope=%s dim=%s", runtime.scope_key, dimension)

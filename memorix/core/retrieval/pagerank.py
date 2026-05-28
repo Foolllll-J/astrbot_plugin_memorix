@@ -10,7 +10,6 @@ import numpy as np
 
 from ...amemorix.common.logging import get_logger
 from ..storage import GraphStore
-from ..utils.entity_sanitizer import is_role_placeholder_entity
 from ..utils.matcher import AhoCorasick
 
 logger = get_logger("A_Memorix.PersonalizedPageRank")
@@ -411,11 +410,7 @@ class PersonalizedPageRank:
             实体列表
         """
         # 获取所有节点
-        all_nodes = [
-            node
-            for node in self.graph_store.get_nodes()
-            if not is_role_placeholder_entity(node)
-        ]
+        all_nodes = self.graph_store.get_nodes()
         if not all_nodes:
             return []
 

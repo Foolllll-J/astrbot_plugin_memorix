@@ -7,7 +7,6 @@ from typing import Any, Dict, Optional
 
 from ..app_context import ScopeRuntimeManager
 from ..core.storage import detect_knowledge_type
-from ..core.utils.entity_sanitizer import sanitize_extracted_entities_relations
 from ..core.utils.hash import compute_hash, normalize_text
 from .content_router import MemoryContentRouter
 
@@ -50,6 +49,42 @@ class IngestService:
         if session:
             return f"{kind}:{session}"
         return kind
+
+    async def _ensure_paragraph_vector(
+        self,
+        *,
+        ctx: Any,
+        paragraph_hash: str,
+        content: str,
+        warnings: list[str],
+    ) -> bool:
+        service = getattr(ctx, "paragraph_vector_service", None)
+        if service is not None and hasattr(service, "ensure_paragraph_vector"):
+            result = await service.ensure_paragraph_vector(paragraph_hash, content)
+            if getattr(result, "vector_state", "") == "failed":
+                warnings.append(f"vector_write_failed: {getattr(result, 'error', '')}")
+            return bool(getattr(result, "vector_written", False) or getattr(result, "vector_already_exists", False))
+
+        if paragraph_hash in ctx.vector_store:
+            updater = getattr(ctx.metadata_store, "update_vector_index", None)
+            if callable(updater):
+                updater("paragraph", paragraph_hash, 1)
+            return True
+        try:
+            embedding = await ctx.embedding_manager.encode(content)
+            if getattr(embedding, "ndim", 1) == 1:
+                embedding = embedding.reshape(1, -1)
+            ctx.vector_store.add(vectors=embedding, ids=[paragraph_hash])
+            updater = getattr(ctx.metadata_store, "update_vector_index", None)
+            if callable(updater):
+                updater("paragraph", paragraph_hash, 1)
+            return True
+        except Exception as exc:
+            updater = getattr(ctx.metadata_store, "update_vector_index", None)
+            if callable(updater):
+                updater("paragraph", paragraph_hash, -1)
+            warnings.append(f"vector_write_failed: {exc}")
+            return False
 
     async def _write_direct_memory(
         self,
@@ -117,18 +152,12 @@ class IngestService:
         )
 
         warnings: list[str] = []
-        vector_written = False
-        if paragraph_hash in ctx.vector_store:
-            vector_written = True
-        else:
-            try:
-                embedding = await ctx.embedding_manager.encode(content)
-                if getattr(embedding, "ndim", 1) == 1:
-                    embedding = embedding.reshape(1, -1)
-                ctx.vector_store.add(vectors=embedding, ids=[paragraph_hash])
-                vector_written = True
-            except Exception as exc:
-                warnings.append(f"vector_write_failed: {exc}")
+        vector_written = await self._ensure_paragraph_vector(
+            ctx=ctx,
+            paragraph_hash=paragraph_hash,
+            content=content,
+            warnings=warnings,
+        )
 
         entities = [item for item in [*person_ids, *participants] if str(item or "").strip()]
         for name in dict.fromkeys(entities):
@@ -348,11 +377,7 @@ class IngestService:
         participant_tokens = self._as_list(participants)
         tag_tokens = self._as_list(tags)
         entity_tokens = list(dict.fromkeys([*self._as_list(entities), *person_tokens, *participant_tokens]))
-        entity_tokens, relation_rows = sanitize_extracted_entities_relations(
-            entity_tokens,
-            relations,
-            user_speakers=[*participant_tokens, *person_tokens],
-        )
+        relation_rows = [dict(item) for item in (relations or []) if isinstance(item, dict)]
         source = self._build_source(source_kind, stream_id, person_tokens)
         paragraph_meta = dict(metadata or {})
         paragraph_meta.update(
@@ -383,18 +408,12 @@ class IngestService:
         )
 
         warnings: list[str] = []
-        vector_written = False
-        if paragraph_hash in ctx.vector_store:
-            vector_written = True
-        else:
-            try:
-                embedding = await ctx.embedding_manager.encode(content)
-                if getattr(embedding, "ndim", 1) == 1:
-                    embedding = embedding.reshape(1, -1)
-                ctx.vector_store.add(vectors=embedding, ids=[paragraph_hash])
-                vector_written = True
-            except Exception as exc:
-                warnings.append(f"vector_write_failed: {exc}")
+        vector_written = await self._ensure_paragraph_vector(
+            ctx=ctx,
+            paragraph_hash=paragraph_hash,
+            content=content,
+            warnings=warnings,
+        )
 
         for name in entity_tokens:
             ctx.metadata_store.add_entity(name=name, source_paragraph=paragraph_hash)

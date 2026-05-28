@@ -57,6 +57,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "backfill_batch_size": 50,
             "max_retry": 3,
         },
+        "paragraph_vectorization": {
+            "backfill_enabled": True,
+            "backfill_interval_seconds": 60,
+            "backfill_batch_size": 50,
+            "backfill_scan_multiplier": 20,
+        },
         "temporal": {
             "enabled": True,
             "allow_created_fallback": True,
@@ -86,6 +92,13 @@ DEFAULT_CONFIG: Dict[str, Any] = {
                 "max_hop": 1,
                 "allow_two_hop_pair": True,
                 "max_paths": 4,
+            },
+            "posterior_graph": {
+                "enabled": True,
+                "drop_ratio": 0.15,
+                "min_core_results": 2,
+                "max_graph_slots": 2,
+                "gate_scan_top_k": 5,
             },
         },
         "time": {"skip_threshold_when_query_empty": True},

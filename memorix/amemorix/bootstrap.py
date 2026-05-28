@@ -15,12 +15,14 @@ from ..core.retrieval.dual_path import (
     RelationIntentConfig,
 )
 from ..core.retrieval.graph_relation_recall import GraphRelationRecallConfig
+from ..core.retrieval.posterior_graph import PosteriorGraphConfig
 from ..core.retrieval.sparse_bm25 import SparseBM25Config, SparseBM25Index
 from ..core.retrieval.threshold import DynamicThresholdFilter, ThresholdConfig, ThresholdMethod
 from ..core.storage import GraphStore, MetadataStore, QuantizationType, SparseMatrixFormat, VectorStore
 from ..core.utils.episode_retrieval_service import EpisodeRetrievalService
 from ..core.utils.episode_segmentation_service import EpisodeSegmentationService
 from ..core.utils.episode_service import EpisodeService
+from ..core.utils.paragraph_vector_service import ParagraphVectorWriteService
 from ..core.utils.person_profile_service import PersonProfileService
 from ..core.utils.relation_write_service import RelationWriteService
 
@@ -188,6 +190,7 @@ def build_context(settings: AppSettings) -> AppContext:
     search_raw = retrieval_raw.get("search", {}) if isinstance(retrieval_raw, dict) else {}
     relation_intent_raw = search_raw.get("relation_intent", {}) if isinstance(search_raw, dict) else {}
     graph_recall_raw = search_raw.get("graph_recall", {}) if isinstance(search_raw, dict) else {}
+    posterior_graph_raw = search_raw.get("posterior_graph", {}) if isinstance(search_raw, dict) else {}
     retriever_config = DualPathRetrieverConfig(
         top_k_paragraphs=_safe_int(settings.get("retrieval.top_k_paragraphs", 20), 20),
         top_k_relations=_safe_int(settings.get("retrieval.top_k_relations", 10), 10),
@@ -206,6 +209,9 @@ def build_context(settings: AppSettings) -> AppContext:
         ),
         graph_recall=GraphRelationRecallConfig(
             **(graph_recall_raw if isinstance(graph_recall_raw, dict) else {})
+        ),
+        posterior_graph=PosteriorGraphConfig(
+            **(posterior_graph_raw if isinstance(posterior_graph_raw, dict) else {})
         ),
     )
 
@@ -250,11 +256,17 @@ def build_context(settings: AppSettings) -> AppContext:
         vector_store=vector_store,
         embedding_manager=adapter,
     )
+    paragraph_vector_service = ParagraphVectorWriteService(
+        metadata_store=metadata_store,
+        vector_store=vector_store,
+        embedding_manager=adapter,
+    )
 
     service_config: Dict[str, Any] = dict(settings.config)
     service_config.update(
         {
             "llm_client": llm_client,
+            "paragraph_vector_service": paragraph_vector_service,
             "relation_write_service": relation_write_service,
         }
     )
@@ -288,6 +300,7 @@ def build_context(settings: AppSettings) -> AppContext:
         retriever=retriever,
         threshold_filter=threshold_filter,
         person_profile_service=person_profile_service,
+        paragraph_vector_service=paragraph_vector_service,
         relation_write_service=relation_write_service,
         episode_service=episode_service,
         episode_retrieval_service=episode_retrieval_service,

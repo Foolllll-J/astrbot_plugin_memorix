@@ -15,11 +15,11 @@ import numpy as np
 from ...amemorix.common.logging import get_logger
 from ..storage import VectorStore, GraphStore, MetadataStore
 from ..embedding import EmbeddingAPIAdapter
-from ..utils.entity_sanitizer import is_role_placeholder_entity
 from ..utils.matcher import AhoCorasick
 from ..utils.time_parser import format_timestamp
 from .graph_relation_recall import GraphRelationRecallConfig, GraphRelationRecallService
 from .pagerank import PersonalizedPageRank, PageRankConfig
+from .posterior_graph import PosteriorGraphConfig, apply_posterior_graph_gate
 from .sparse_bm25 import SparseBM25Config, SparseBM25Index
 
 logger = get_logger("A_Memorix.DualPathRetriever")
@@ -102,6 +102,7 @@ class DualPathRetrieverConfig:
     fusion: "FusionConfig" = field(default_factory=lambda: FusionConfig())
     relation_intent: "RelationIntentConfig" = field(default_factory=lambda: RelationIntentConfig())
     graph_recall: GraphRelationRecallConfig = field(default_factory=GraphRelationRecallConfig)
+    posterior_graph: PosteriorGraphConfig = field(default_factory=PosteriorGraphConfig)
 
     def __post_init__(self):
         """验证配置"""
@@ -113,6 +114,8 @@ class DualPathRetrieverConfig:
             self.relation_intent = RelationIntentConfig(**self.relation_intent)
         if isinstance(self.graph_recall, dict):
             self.graph_recall = GraphRelationRecallConfig(**self.graph_recall)
+        if isinstance(self.posterior_graph, dict):
+            self.posterior_graph = PosteriorGraphConfig(**self.posterior_graph)
 
         if not 0 <= self.alpha <= 1:
             raise ValueError(f"alpha必须在[0, 1]之间: {self.alpha}")
@@ -1052,6 +1055,15 @@ class DualPathRetriever:
         if temporal:
             fused_results = self._sort_results_with_temporal(fused_results, temporal)
 
+        fused_results = apply_posterior_graph_gate(
+            self,
+            query=query,
+            base_results=fused_results,
+            top_k=top_k,
+            temporal=temporal,
+            relation_intent=relation_intent,
+        )
+
         fused_results = self._apply_relation_intent_pair_rerank(
             fused_results,
             enabled=bool(relation_intent.get("enabled", False)),
@@ -1721,11 +1733,7 @@ class DualPathRetriever:
             实体字典 {实体名: 权重}
         """
         # 获取所有实体
-        all_entities = [
-            node
-            for node in self.graph_store.get_nodes()
-            if not is_role_placeholder_entity(node)
-        ]
+        all_entities = self.graph_store.get_nodes()
         if not all_entities:
             return {}
 
@@ -1780,6 +1788,8 @@ class DualPathRetriever:
                 "graph_recall_candidate_k": self.config.graph_recall.candidate_k,
                 "graph_recall_allow_two_hop_pair": self.config.graph_recall.allow_two_hop_pair,
                 "graph_recall_max_paths": self.config.graph_recall.max_paths,
+                "posterior_graph_enabled": self.config.posterior_graph.enabled,
+                "posterior_graph_max_graph_slots": self.config.posterior_graph.max_graph_slots,
             },
             "vector_store": {
                 "size": int(vector_size),

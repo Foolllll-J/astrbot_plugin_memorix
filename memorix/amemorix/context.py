@@ -13,6 +13,7 @@ from ..core.retrieval import DynamicThresholdFilter, DualPathRetriever, SparseBM
 from ..core.storage import GraphStore, MetadataStore, VectorStore
 from ..core.utils.episode_retrieval_service import EpisodeRetrievalService
 from ..core.utils.episode_service import EpisodeService
+from ..core.utils.paragraph_vector_service import ParagraphVectorWriteService
 from ..core.utils.person_profile_service import PersonProfileService
 from ..core.utils.relation_write_service import RelationWriteService
 
@@ -34,6 +35,7 @@ class AppContext:
     retriever: DualPathRetriever
     threshold_filter: DynamicThresholdFilter
     person_profile_service: PersonProfileService
+    paragraph_vector_service: ParagraphVectorWriteService
     relation_write_service: RelationWriteService
     episode_service: EpisodeService
     episode_retrieval_service: EpisodeRetrievalService

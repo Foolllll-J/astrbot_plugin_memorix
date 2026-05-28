@@ -20,6 +20,29 @@ class ImportService:
     def __init__(self, ctx: AppContext):
         self.ctx = ctx
 
+    async def _ensure_paragraph_vector(self, hash_value: str, content: str) -> Dict[str, Any]:
+        service = getattr(self.ctx, "paragraph_vector_service", None)
+        if service is not None and hasattr(service, "ensure_paragraph_vector"):
+            result = await service.ensure_paragraph_vector(hash_value, content)
+            return {
+                "vector_written": bool(result.vector_written or result.vector_already_exists),
+                "vector_state": result.vector_state,
+                "warning": f"vector_write_failed: {result.error}" if result.vector_state == "failed" else "",
+            }
+        try:
+            if hash_value not in self.ctx.vector_store:
+                embedding = await self.ctx.embedding_manager.encode(content)
+                self.ctx.vector_store.add(vectors=embedding.reshape(1, -1), ids=[hash_value])
+            updater = getattr(self.ctx.metadata_store, "update_vector_index", None)
+            if callable(updater):
+                updater("paragraph", hash_value, 1)
+            return {"vector_written": True, "vector_state": "ready", "warning": ""}
+        except Exception as exc:
+            updater = getattr(self.ctx.metadata_store, "update_vector_index", None)
+            if callable(updater):
+                updater("paragraph", hash_value, -1)
+            return {"vector_written": False, "vector_state": "failed", "warning": f"vector_write_failed: {exc}"}
+
     async def run_import(self, mode: str, payload: Any, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         mode = str(mode or "").strip().lower() or "text"
         options = options or {}
@@ -87,9 +110,17 @@ class ImportService:
             knowledge_type=resolved_kt if resolved_kt else KnowledgeType.MIXED.value,
             time_meta=normalize_time_meta(time_meta or {}),
         )
-        embedding = await self.ctx.embedding_manager.encode(text)
-        self.ctx.vector_store.add(vectors=embedding.reshape(1, -1), ids=[hash_value])
-        return {"mode": "paragraph", "hash": hash_value, "knowledge_type": resolved_kt}
+        vector_result = await self._ensure_paragraph_vector(hash_value, text)
+        payload = {
+            "mode": "paragraph",
+            "hash": hash_value,
+            "knowledge_type": resolved_kt,
+            "vector_state": vector_result["vector_state"],
+            "vector_written": vector_result["vector_written"],
+        }
+        if vector_result["warning"]:
+            payload["warnings"] = [vector_result["warning"]]
+        return payload
 
     async def import_relation_from_text(self, text: str) -> Dict[str, Any]:
         if "|" in text:

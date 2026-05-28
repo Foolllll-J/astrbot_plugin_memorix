@@ -27,6 +27,7 @@ from .graph_relation_recall import (
     GraphRelationRecallConfig,
     GraphRelationRecallService,
 )
+from .posterior_graph import PosteriorGraphConfig
 
 __all__ = [
     # DualPathRetriever
@@ -51,4 +52,5 @@ __all__ = [
     # Graph relation recall
     "GraphRelationRecallConfig",
     "GraphRelationRecallService",
+    "PosteriorGraphConfig",
 ]

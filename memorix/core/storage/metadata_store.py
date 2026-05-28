@@ -2792,6 +2792,22 @@ class MetadataStore:
 
         return cursor.rowcount > 0
 
+    def list_paragraphs_for_vector_backfill(self, limit: int = 1000) -> List[Dict[str, Any]]:
+        """列出需要确认/回填段落向量的 live 段落。"""
+        cursor = self._conn.cursor()
+        cursor.execute(
+            """
+            SELECT hash, content, source, vector_index, created_at, updated_at
+            FROM paragraphs
+            WHERE (is_deleted IS NULL OR is_deleted = 0)
+              AND (vector_index IS NULL OR vector_index < 0)
+            ORDER BY COALESCE(updated_at, created_at, 0) ASC
+            LIMIT ?
+            """,
+            (max(1, int(limit or 1000)),),
+        )
+        return [self._row_to_dict(row, "paragraph") for row in cursor.fetchall()]
+
     def set_permanence(self, hash_value: str, item_type: str, is_permanent: bool) -> bool:
         """设置永久记忆标记"""
         table_map = {

@@ -33,6 +33,9 @@ class SummaryService:
 
     def _summary_importer_config(self) -> Dict[str, Any]:
         cfg = dict(self.ctx.config)
+        paragraph_vector_service = getattr(self.ctx, "paragraph_vector_service", None)
+        if paragraph_vector_service is not None:
+            cfg["paragraph_vector_service"] = paragraph_vector_service
         relation_write_service = getattr(self.ctx, "relation_write_service", None)
         if relation_write_service is not None:
             cfg["relation_write_service"] = relation_write_service

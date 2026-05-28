@@ -54,6 +54,7 @@ class TaskManager:
 
         self._workers.append(asyncio.create_task(self._auto_save_loop(), name="auto-save-loop"))
         self._workers.append(asyncio.create_task(self._memory_maintenance_loop(), name="memory-maint-loop"))
+        self._workers.append(asyncio.create_task(self._paragraph_vector_backfill_loop(), name="paragraph-vector-loop"))
         self._workers.append(asyncio.create_task(self._person_profile_refresh_loop(), name="person-profile-loop"))
         self._workers.append(asyncio.create_task(self._episode_generation_loop(), name="episode-generation-loop"))
         logger.info("TaskManager started with %s workers", len(self._workers))
@@ -461,6 +462,40 @@ class TaskManager:
                 break
             except Exception as exc:
                 logger.warning("Memory maintenance loop error: %s", exc, exc_info=True)
+
+    async def _paragraph_vector_backfill_loop(self) -> None:
+        while not self._stopping:
+            try:
+                interval_s = int(self.ctx.get_config("retrieval.paragraph_vectorization.backfill_interval_seconds", 60))
+                await asyncio.sleep(max(10, interval_s))
+                if not bool(self.ctx.get_config("retrieval.paragraph_vectorization.backfill_enabled", True)):
+                    continue
+                service = getattr(self.ctx, "paragraph_vector_service", None)
+                if service is None or not hasattr(service, "backfill_missing_vectors"):
+                    continue
+
+                batch_size = int(self.ctx.get_config("retrieval.paragraph_vectorization.backfill_batch_size", 50))
+                scan_multiplier = int(
+                    self.ctx.get_config("retrieval.paragraph_vectorization.backfill_scan_multiplier", 20)
+                )
+                result = await service.backfill_missing_vectors(
+                    batch_size=max(1, batch_size),
+                    scan_limit=max(1, batch_size) * max(1, scan_multiplier),
+                )
+                if (
+                    int(result.get("written", 0) or 0) > 0
+                    or int(result.get("already_exists", 0) or 0) > 0
+                    or result.get("failed")
+                ):
+                    logger.info("paragraph vector backfill result: %s", result)
+                    try:
+                        self.ctx.vector_store.save()
+                    except Exception as exc:
+                        logger.warning("Paragraph vector backfill save failed: %s", exc)
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.warning("Paragraph vector backfill loop error: %s", exc, exc_info=True)
 
     async def _person_profile_refresh_loop(self) -> None:
         while not self._stopping:
