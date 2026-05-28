@@ -37,6 +37,7 @@ def _install_astrbot_stub() -> None:
 
 _install_astrbot_stub()
 
+from astrbot_plugin_memorix.memorix.amemorix.routers import v1_router
 from astrbot_plugin_memorix.memorix.webui.plugin_page_bridge import _WebV1TaskManager
 from astrbot_plugin_memorix.memorix.webui.plugin_page_bridge import PluginPageWebUIBridge
 
@@ -170,3 +171,43 @@ def test_plugin_page_request_unwraps_bridge_envelope():
     assert 'return envelope.data;' in script
     if not jsdom_available:
         assert 'envelope?.status === "error"' in script
+
+
+def test_plugin_page_contains_ui_preference_and_trend_controls():
+    html = (ROOT / "astrbot_plugin_memorix" / "pages" / "memorix" / "index.html").read_text(encoding="utf-8")
+
+    assert 'id="graph-search-action"' in html
+    assert 'id="tool-call-chart"' in html
+    assert 'id="ui-theme"' in html
+    assert 'id="ui-effects"' in html
+    assert 'data-effects="lite"' in html
+    assert "近 2 小时" in html
+
+
+def test_plugin_page_guards_sandboxed_local_storage():
+    html = (ROOT / "astrbot_plugin_memorix" / "pages" / "memorix" / "index.html").read_text(encoding="utf-8")
+    script = html.split("<script>", 1)[1].rsplit("</script>", 1)[0]
+
+    assert "function getUiPrefsStorage()" in script
+    assert "const storage = getUiPrefsStorage();" in script
+    assert "localStorage.getItem" not in script
+    assert "localStorage.setItem" not in script
+    assert "WebUI 偏好本地保存失败" not in script
+
+
+def test_query_event_histogram_keeps_two_hour_window(monkeypatch):
+    request = types.SimpleNamespace(app=types.SimpleNamespace(state=types.SimpleNamespace(query_events=[])))
+
+    monkeypatch.setattr(v1_router.time, "time", lambda: 1000.0)
+    v1_router._record_query_event(request, "aggregate")
+    monkeypatch.setattr(v1_router.time, "time", lambda: 1090.0)
+    v1_router._record_query_event(request, "entity")
+
+    monkeypatch.setattr(v1_router.time, "time", lambda: 4600.0)
+    assert v1_router._recent_query_counts(request, seconds=60)["total"] == 0
+
+    trend = v1_router._query_event_histogram(request, seconds=7200, bucket_seconds=300)
+    assert trend["seconds"] == 7200
+    assert trend["bucket_seconds"] == 300
+    assert trend["total"] == 2
+    assert len(trend["buckets"]) == 24

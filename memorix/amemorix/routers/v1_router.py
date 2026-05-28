@@ -18,6 +18,9 @@ from ...core.utils.runtime_self_check import ensure_runtime_self_check
 
 router = APIRouter(prefix="/v1", tags=["v1"])
 
+QUERY_EVENT_RETENTION_SECONDS = 2 * 60 * 60
+QUERY_TREND_BUCKET_SECONDS = 5 * 60
+
 
 class ImportTaskCreateRequest(BaseModel):
     mode: str = Field(default="text")
@@ -164,27 +167,74 @@ def _task_or_404(task):
 def _record_query_event(request: Request, query_type: str) -> None:
     now = time.time()
     events = list(getattr(request.app.state, "query_events", []) or [])
-    cutoff = now - 300.0
+    cutoff = now - QUERY_EVENT_RETENTION_SECONDS
     events = [item for item in events if float(item.get("ts", 0.0) or 0.0) >= cutoff]
     events.append({"ts": now, "type": str(query_type or "query")})
     request.app.state.query_events = events
+
+
+def _query_events(request: Request, *, now: Optional[float] = None) -> list[dict[str, Any]]:
+    current = time.time() if now is None else float(now)
+    cutoff = current - QUERY_EVENT_RETENTION_SECONDS
+    events = [
+        item
+        for item in list(getattr(request.app.state, "query_events", []) or [])
+        if float(item.get("ts", 0.0) or 0.0) >= cutoff
+    ]
+    request.app.state.query_events = events
+    return events
 
 
 def _recent_query_counts(request: Request, *, seconds: float = 60.0) -> Dict[str, int]:
     now = time.time()
     cutoff = now - max(1.0, float(seconds))
     counts: Dict[str, int] = {"total": 0}
-    events = []
-    for item in list(getattr(request.app.state, "query_events", []) or []):
+    events = _query_events(request, now=now)
+    for item in events:
         ts = float(item.get("ts", 0.0) or 0.0)
         if ts < cutoff:
             continue
         kind = str(item.get("type") or "query")
         counts[kind] = counts.get(kind, 0) + 1
         counts["total"] += 1
-        events.append(item)
-    request.app.state.query_events = events
     return counts
+
+
+def _query_event_histogram(
+    request: Request,
+    *,
+    seconds: float = QUERY_EVENT_RETENTION_SECONDS,
+    bucket_seconds: float = QUERY_TREND_BUCKET_SECONDS,
+) -> Dict[str, Any]:
+    now = time.time()
+    span = max(float(bucket_seconds), float(seconds))
+    bucket = max(60.0, float(bucket_seconds))
+    bucket_count = max(1, int((span + bucket - 1) // bucket))
+    start = now - bucket_count * bucket
+    buckets = [
+        {
+            "start": start + index * bucket,
+            "end": start + (index + 1) * bucket,
+            "total": 0,
+            "types": {},
+        }
+        for index in range(bucket_count)
+    ]
+    for item in _query_events(request, now=now):
+        ts = float(item.get("ts", 0.0) or 0.0)
+        if ts < start:
+            continue
+        index = min(bucket_count - 1, max(0, int((ts - start) // bucket)))
+        kind = str(item.get("type") or "query")
+        types = buckets[index]["types"]
+        types[kind] = int(types.get(kind, 0) or 0) + 1
+        buckets[index]["total"] += 1
+    return {
+        "seconds": int(bucket_count * bucket),
+        "bucket_seconds": int(bucket),
+        "total": sum(int(item["total"] or 0) for item in buckets),
+        "buckets": buckets,
+    }
 
 
 def _status_from_async_summary(summary: Dict[str, Any]) -> str:
@@ -234,6 +284,7 @@ async def dashboard_status(request: Request):
     stats = await QueryService(ctx).stats()
     metadata_stats = stats.get("metadata_store") or {}
     query_counts = _recent_query_counts(request)
+    query_trend = _query_event_histogram(request)
     import_summary = ctx.metadata_store.get_async_task_summary(task_type="import")
     episode_summary = ctx.metadata_store.get_episode_source_rebuild_summary(failed_limit=5)
     runtime_report = getattr(ctx, "_runtime_self_check_report", None)
@@ -256,6 +307,10 @@ async def dashboard_status(request: Request):
                 "recent_seconds": 60,
                 "recent_count": query_counts.get("aggregate", 0),
                 "recent_total_count": query_counts.get("total", 0),
+                "trend_seconds": query_trend["seconds"],
+                "trend_bucket_seconds": query_trend["bucket_seconds"],
+                "trend_total_count": query_trend["total"],
+                "trend_buckets": query_trend["buckets"],
             },
             "episode": {
                 "status": _status_from_episode_summary(episode_summary),

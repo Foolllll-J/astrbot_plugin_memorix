@@ -51,6 +51,38 @@
         --control-h: 44px;
       }
 
+      html[data-theme="dark"] {
+        color-scheme: dark;
+        --page-bg: #07111f;
+        --page-bg-2: #101827;
+        --ink: #f6f9ff;
+        --text: #dbe7f7;
+        --muted: #94a8bf;
+        --muted-2: #71839a;
+        --hairline: rgba(148, 163, 184, 0.24);
+        --hairline-strong: rgba(96, 165, 250, 0.42);
+        --shell: rgba(8, 17, 31, 0.7);
+        --surface: rgba(15, 23, 42, 0.66);
+        --surface-strong: rgba(30, 41, 59, 0.78);
+        --surface-soft: rgba(15, 23, 42, 0.58);
+        --nav: rgba(15, 23, 42, 0.66);
+        --nav-soft: rgba(96, 165, 250, 0.12);
+        --glass-highlight: rgba(148, 163, 184, 0.34);
+        --accent: #60a5fa;
+        --accent-strong: #93c5fd;
+        --accent-ink: #dbeafe;
+        --accent-soft: rgba(96, 165, 250, 0.16);
+        --blue-soft: rgba(96, 165, 250, 0.16);
+        --teal-soft: rgba(45, 212, 191, 0.14);
+        --pink-soft: rgba(216, 180, 254, 0.14);
+        --amber-soft: rgba(245, 158, 11, 0.18);
+        --red-soft: rgba(248, 113, 113, 0.16);
+        --green-soft: rgba(52, 211, 153, 0.16);
+        --shadow: 0 30px 80px rgba(0, 0, 0, 0.42);
+        --shadow-sm: 0 14px 36px rgba(0, 0, 0, 0.32);
+        --shadow-xs: 0 10px 26px rgba(0, 0, 0, 0.24);
+      }
+
       * {
         box-sizing: border-box;
       }
@@ -74,6 +106,17 @@
           Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
         font-size: 14px;
         line-height: 1.5;
+      }
+
+      html[data-theme="dark"] body {
+        background:
+          radial-gradient(circle at 16% 18%, rgba(14, 165, 233, 0.2), transparent 28%),
+          radial-gradient(circle at 84% 10%, rgba(79, 70, 229, 0.28), transparent 30%),
+          linear-gradient(135deg, var(--page-bg), var(--page-bg-2) 56%, #0b1220);
+      }
+
+      html[data-effects="lite"] body {
+        background: linear-gradient(135deg, var(--page-bg), var(--page-bg-2));
       }
 
       body::before,
@@ -107,6 +150,11 @@
           radial-gradient(circle at 45% 44%, rgba(147, 197, 253, 0.62), transparent 46%),
           radial-gradient(circle at 68% 58%, rgba(196, 181, 253, 0.26), transparent 40%);
         animation: floatGlow 22s ease-in-out infinite alternate-reverse;
+      }
+
+      html[data-effects="lite"] body::before,
+      html[data-effects="lite"] body::after {
+        display: none;
       }
 
       @keyframes floatGlow {
@@ -201,6 +249,32 @@
       .empty {
         backdrop-filter: var(--blur-soft);
         -webkit-backdrop-filter: var(--blur-soft);
+      }
+
+      html[data-effects="lite"] .sidebar,
+      html[data-effects="lite"] .band,
+      html[data-effects="lite"] .metric,
+      html[data-effects="lite"] .result,
+      html[data-effects="lite"] .detail-drawer,
+      html[data-effects="lite"] .candidate-menu,
+      html[data-effects="lite"] .side-card,
+      html[data-effects="lite"] .graph-zoom,
+      html[data-effects="lite"] .settings-group,
+      html[data-effects="lite"] .summary-item,
+      html[data-effects="lite"] .memory-kpi,
+      html[data-effects="lite"] .memory-config-item,
+      html[data-effects="lite"] .json,
+      html[data-effects="lite"] .empty,
+      html[data-effects="lite"] #graph-canvas {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+      }
+
+      html[data-effects="lite"] .view.active,
+      html[data-effects="lite"] .candidate-menu.show,
+      html[data-effects="lite"] body::before,
+      html[data-effects="lite"] body::after {
+        animation: none !important;
       }
 
       .sidebar {
@@ -468,6 +542,30 @@
           var(--surface);
         box-shadow: var(--shadow-xs);
         overflow: hidden;
+      }
+
+      html[data-theme="dark"] .shell,
+      html[data-theme="dark"] .sidebar,
+      html[data-theme="dark"] .band,
+      html[data-theme="dark"] .metric,
+      html[data-theme="dark"] .result,
+      html[data-theme="dark"] .side-card,
+      html[data-theme="dark"] .settings-group,
+      html[data-theme="dark"] .summary-item,
+      html[data-theme="dark"] .memory-kpi,
+      html[data-theme="dark"] .memory-config-item {
+        border-color: var(--hairline);
+        background:
+          linear-gradient(145deg, rgba(30, 41, 59, 0.74), rgba(15, 23, 42, 0.54)),
+          var(--surface);
+      }
+
+      html[data-theme="dark"] .notice {
+        color: var(--accent-ink);
+        border-color: rgba(96, 165, 250, 0.32);
+        background:
+          radial-gradient(circle at 78% 18%, rgba(96, 165, 250, 0.16), transparent 24%),
+          linear-gradient(135deg, rgba(30, 41, 59, 0.86), rgba(15, 23, 42, 0.62));
       }
 
       .band::before,
@@ -799,6 +897,51 @@
         height: 26px;
       }
 
+      .call-chart {
+        min-height: 150px;
+      }
+
+      .call-chart svg {
+        width: 100%;
+        height: 148px;
+        display: block;
+      }
+
+      .call-chart .axis {
+        stroke: rgba(107, 139, 176, 0.22);
+        stroke-width: 1;
+      }
+
+      .call-chart .area {
+        fill: rgba(37, 99, 235, 0.12);
+      }
+
+      .call-chart .line {
+        fill: none;
+        stroke: var(--accent);
+        stroke-width: 3;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .call-chart .dot {
+        fill: var(--surface-strong);
+        stroke: var(--accent);
+        stroke-width: 2;
+      }
+
+      .call-chart .bar {
+        fill: rgba(37, 99, 235, 0.16);
+      }
+
+      .chart-foot {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
       .btn {
         position: relative;
         display: inline-flex;
@@ -940,13 +1083,39 @@
         background: rgba(255, 255, 255, 0.84);
       }
 
+      html[data-theme="dark"] .input,
+      html[data-theme="dark"] .select,
+      html[data-theme="dark"] .textarea,
+      html[data-theme="dark"] .graph-zoom,
+      html[data-theme="dark"] .segmented,
+      html[data-theme="dark"] .btn,
+      html[data-theme="dark"] .tag,
+      html[data-theme="dark"] .json,
+      html[data-theme="dark"] .empty {
+        color: var(--text);
+        border-color: var(--hairline);
+        background: rgba(15, 23, 42, 0.66);
+        box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.14);
+      }
+
+      html[data-theme="dark"] .input::placeholder,
+      html[data-theme="dark"] .textarea::placeholder {
+        color: rgba(148, 163, 184, 0.72);
+      }
+
+      html[data-theme="dark"] .input:focus,
+      html[data-theme="dark"] .select:focus,
+      html[data-theme="dark"] .textarea:focus {
+        background: rgba(30, 41, 59, 0.88);
+      }
+
       .config-field {
         min-width: 0;
       }
 
       .candidate-menu {
-        position: absolute;
-        z-index: 5000;
+        position: fixed;
+        z-index: 80;
         display: none;
         max-height: 250px;
         overflow: auto;
@@ -955,6 +1124,12 @@
         border-radius: 16px;
         background: rgba(255, 255, 255, 0.78);
         box-shadow: 0 24px 58px rgba(31, 85, 149, 0.18);
+      }
+
+      html[data-theme="dark"] .candidate-menu {
+        border-color: rgba(148, 163, 184, 0.28);
+        background: rgba(15, 23, 42, 0.94);
+        box-shadow: 0 24px 58px rgba(0, 0, 0, 0.34);
       }
 
       .candidate-menu.show {
@@ -1192,6 +1367,14 @@
         -webkit-backdrop-filter: var(--blur-soft);
       }
 
+      html[data-theme="dark"] #graph-canvas {
+        border-color: var(--hairline);
+        background:
+          radial-gradient(circle at 50% 46%, rgba(96, 165, 250, 0.12), transparent 34%),
+          radial-gradient(circle at 22% 18%, rgba(30, 41, 59, 0.74), transparent 28%),
+          linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(2, 6, 23, 0.7));
+      }
+
       #graph-canvas::before {
         position: absolute;
         inset: 0;
@@ -1201,6 +1384,12 @@
         background-size: 36px 36px;
         content: "";
         pointer-events: none;
+      }
+
+      html[data-theme="dark"] #graph-canvas::before {
+        background-image:
+          linear-gradient(rgba(96, 165, 250, 0.08) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(96, 165, 250, 0.08) 1px, transparent 1px);
       }
 
       .split {
@@ -1897,6 +2086,14 @@
 
               <div class="band">
                 <div class="panel-title">
+                  <h2>调用趋势</h2>
+                  <span id="tool-call-chart-meta" class="section-label">近 2 小时 / 5 分钟区间</span>
+                </div>
+                <div id="tool-call-chart" class="call-chart"><div class="empty">等待调用统计</div></div>
+              </div>
+
+              <div class="band">
+                <div class="panel-title">
                   <h2>服务分区</h2>
                   <span class="section-label">核心功能入口</span>
                 </div>
@@ -1927,6 +2124,7 @@
                       <select id="graph-leaf" class="select"><option value="true">开启</option><option value="false">关闭</option></select>
                     </label>
                     <button class="btn primary" id="graph-load">载入图谱</button>
+                    <button class="btn" id="graph-search-action">定位节点</button>
                     <button class="btn" id="graph-layout">整理布局</button>
                     <div class="graph-zoom" aria-label="图谱缩放">
                       <button class="btn icon" id="graph-zoom-out" title="缩小图谱">-</button>
@@ -2156,6 +2354,30 @@
             <section id="view-settings" class="view">
               <div class="band" style="margin-top:0">
                 <div class="panel-title">
+                  <h2>界面偏好</h2>
+                  <span id="ui-pref-status" class="section-label">本地保存</span>
+                </div>
+                <div class="settings-fields">
+                  <div class="field">
+                    <label>主题模式</label>
+                    <select id="ui-theme" class="select">
+                      <option value="auto">跟随系统</option>
+                      <option value="light">浅色</option>
+                      <option value="dark">深色</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>视觉效果</label>
+                    <select id="ui-effects" class="select">
+                      <option value="glass">完整毛玻璃</option>
+                      <option value="lite">轻量模式</option>
+                    </select>
+                  </div>
+                </div>
+                <p class="settings-note">此偏好仅保存在当前浏览器本地，不写入 AstrBot 服务配置；如果插件页被浏览器沙盒限制 localStorage，则仅在本页会话内生效。轻量模式会关闭毛玻璃滤镜与背景动效；图谱性能模式下会自动禁用初始化缩放动画。</p>
+              </div>
+              <div class="band">
+                <div class="panel-title">
                   <h2>运行配置</h2>
                   <div class="toolbar">
                     <button class="btn" id="config-load">刷新配置</button>
@@ -2226,9 +2448,50 @@
 
     <script src="/api/plugin/page/bridge-sdk.js"></script>
     <script>
+      const UI_PREFS_KEY = "memorix.webui.ui_prefs";
+      const defaultUiPrefs = { theme: "auto", effects: "glass" };
+      let uiPrefsStorage = null;
+      let uiPrefsStorageChecked = false;
+
+      function getUiPrefsStorage() {
+        if (uiPrefsStorageChecked) return uiPrefsStorage;
+        uiPrefsStorageChecked = true;
+        try {
+          uiPrefsStorage = window.localStorage || null;
+        } catch {
+          uiPrefsStorage = null;
+        }
+        return uiPrefsStorage;
+      }
+
+      function normalizeUiPrefs(raw = {}) {
+        return {
+          theme: ["auto", "light", "dark"].includes(raw.theme) ? raw.theme : defaultUiPrefs.theme,
+          effects: ["glass", "lite"].includes(raw.effects) ? raw.effects : defaultUiPrefs.effects,
+        };
+      }
+
+      function readUiPrefs() {
+        const storage = getUiPrefsStorage();
+        if (!storage) return { ...defaultUiPrefs };
+        let raw = "{}";
+        try {
+          raw = storage.getItem(UI_PREFS_KEY) || "{}";
+        } catch {
+          uiPrefsStorage = null;
+          return { ...defaultUiPrefs };
+        }
+        try {
+          return normalizeUiPrefs(JSON.parse(raw));
+        } catch {
+          return { ...defaultUiPrefs };
+        }
+      }
+
       const state = {
         view: "dashboard",
         queryMode: "aggregate",
+        ui: readUiPrefs(),
         graph: {
           network: null,
           nodes: null,
@@ -2353,6 +2616,73 @@
 
       function clamp(value, min, max) {
         return Math.min(max, Math.max(min, value));
+      }
+
+      function prefersReducedMotion() {
+        return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+      }
+
+      function resolvedUiTheme() {
+        if (state.ui.theme === "dark" || state.ui.theme === "light") return state.ui.theme;
+        return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ? "dark" : "light";
+      }
+
+      function uiPrefStatusText(prefix) {
+        const theme = resolvedUiTheme();
+        return `${prefix} · ${theme === "dark" ? "深色" : "浅色"} · ${state.ui.effects === "lite" ? "轻量" : "毛玻璃"}`;
+      }
+
+      function uiPrefStorageLabel(saved) {
+        if (!getUiPrefsStorage()) return saved ? "已应用（本页有效）" : "本页会话有效";
+        return saved ? "已本地保存" : "本地保存";
+      }
+
+      function applyUiPrefs() {
+        const theme = resolvedUiTheme();
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.dataset.effects = state.ui.effects === "lite" ? "lite" : "glass";
+        const themeSelect = $("ui-theme");
+        const effectsSelect = $("ui-effects");
+        if (themeSelect) themeSelect.value = state.ui.theme;
+        if (effectsSelect) effectsSelect.value = state.ui.effects;
+        const status = $("ui-pref-status");
+        if (status) status.textContent = uiPrefStatusText(uiPrefStorageLabel(false));
+        if (state.graph.network) {
+          applyGraphResponsiveOptions();
+          if (state.graph.nodes) state.graph.nodes.update(state.graph.rawNodes.map(normalizeGraphNode));
+          if (state.graph.edges) state.graph.edges.update(state.graph.rawEdges.map(normalizeGraphEdge));
+        }
+      }
+
+      function writeStoredUiPrefs() {
+        const storage = getUiPrefsStorage();
+        if (!storage) return false;
+        try {
+          storage.setItem(UI_PREFS_KEY, JSON.stringify(state.ui));
+          return true;
+        } catch {
+          uiPrefsStorage = null;
+          return false;
+        }
+      }
+
+      function saveUiPrefs() {
+        state.ui = normalizeUiPrefs(state.ui);
+        const saved = writeStoredUiPrefs();
+        applyUiPrefs();
+        const status = $("ui-pref-status");
+        if (status) status.textContent = uiPrefStatusText(uiPrefStorageLabel(saved));
+      }
+
+      function handleUiPrefChange(event) {
+        const target = event.target;
+        if (target?.id === "ui-theme") state.ui.theme = target.value;
+        if (target?.id === "ui-effects") state.ui.effects = target.value;
+        saveUiPrefs();
+      }
+
+      function shouldAnimateGraph(animated = true) {
+        return !!animated && !state.graph.lowPerf && !prefersReducedMotion();
       }
 
       async function request(method, url, data) {
@@ -2610,6 +2940,67 @@
         `).join("");
       }
 
+      function renderCallTrend(query) {
+        const root = $("tool-call-chart");
+        if (!root) return;
+        const buckets = Array.isArray(query?.trend_buckets) ? query.trend_buckets : [];
+        const compactBuckets = buckets.map((item) => ({
+          start: Number(item.start || 0),
+          end: Number(item.end || 0),
+          total: Number(item.total || 0),
+        }));
+        const total = Number(query?.trend_total_count ?? compactBuckets.reduce((sum, item) => sum + item.total, 0));
+        const bucketSeconds = Number(query?.trend_bucket_seconds || 300);
+        const spanSeconds = Number(query?.trend_seconds || compactBuckets.length * bucketSeconds || 7200);
+        const meta = $("tool-call-chart-meta");
+        if (meta) {
+          const hours = Math.max(1, Math.round(spanSeconds / 3600));
+          const minutes = Math.max(1, Math.round(bucketSeconds / 60));
+          meta.textContent = `近 ${hours} 小时 · ${minutes} 分钟区间 · ${total} 次`;
+        }
+        if (!compactBuckets.length || total <= 0) {
+          root.innerHTML = '<div class="empty">近 2 小时暂无查询/工具调用记录</div>';
+          return;
+        }
+        const width = 640;
+        const height = 148;
+        const pad = { left: 18, right: 12, top: 14, bottom: 24 };
+        const maxValue = Math.max(1, ...compactBuckets.map((item) => item.total));
+        const innerW = width - pad.left - pad.right;
+        const innerH = height - pad.top - pad.bottom;
+        const points = compactBuckets.map((item, index) => {
+          const x = pad.left + (compactBuckets.length === 1 ? innerW : (index / (compactBuckets.length - 1)) * innerW);
+          const y = pad.top + innerH - (item.total / maxValue) * innerH;
+          return { x, y, value: item.total, start: item.start };
+        });
+        const line = points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+        const area = `${pad.left},${pad.top + innerH} ${line} ${pad.left + innerW},${pad.top + innerH}`;
+        const barWidth = Math.max(2, innerW / compactBuckets.length - 3);
+        const bars = points.map((point) => {
+          const h = pad.top + innerH - point.y;
+          return `<rect class="bar" x="${(point.x - barWidth / 2).toFixed(1)}" y="${point.y.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${h.toFixed(1)}" rx="3"></rect>`;
+        }).join("");
+        const dots = points
+          .filter((point) => point.value > 0)
+          .map((point) => `<circle class="dot" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3.5"><title>${new Date(point.start * 1000).toLocaleTimeString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit" })} · ${point.value} 次</title></circle>`)
+          .join("");
+        root.innerHTML = `
+          <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="近 2 小时查询与工具调用趋势">
+            <line class="axis" x1="${pad.left}" y1="${pad.top + innerH}" x2="${pad.left + innerW}" y2="${pad.top + innerH}"></line>
+            <line class="axis" x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${pad.top + innerH}"></line>
+            ${bars}
+            <polygon class="area" points="${area}"></polygon>
+            <polyline class="line" points="${line}"></polyline>
+            ${dots}
+          </svg>
+          <div class="chart-foot">
+            <span>${escapeHtml(new Date(compactBuckets[0].start * 1000).toLocaleTimeString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit" }))}</span>
+            <span>峰值 ${maxValue} 次 / 区间</span>
+            <span>${escapeHtml(new Date(compactBuckets[compactBuckets.length - 1].end * 1000).toLocaleTimeString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit" }))}</span>
+          </div>
+        `;
+      }
+
       async function loadDashboardStatus() {
         try {
           const data = await request("get", "/v1/dashboard/status");
@@ -2618,9 +3009,11 @@
           if (latest?.task_id) updateTaskSuggestions([latest.task_id]);
           if (latest) updateSourceSuggestions(extractTaskSources(latest));
           renderServiceRows();
+          renderCallTrend(data?.services?.query || {});
           return data;
         } catch (error) {
           renderServiceRows();
+          renderCallTrend({});
           return null;
         }
       }
@@ -2809,6 +3202,27 @@
         return data;
       }
 
+      function graphPalette() {
+        const dark = document.documentElement.dataset.theme === "dark";
+        return dark
+          ? {
+              nodeFont: "#dbeafe",
+              nodeMuted: "#8091a7",
+              edgeFont: "#9fb3c8",
+              edgeStroke: "#0b1220",
+              edgeColor: "#64748b",
+              edgeHighlight: "#93c5fd",
+            }
+          : {
+              nodeFont: "#1b2736",
+              nodeMuted: "#91a0ad",
+              edgeFont: "#526679",
+              edgeStroke: "#ffffff",
+              edgeColor: "#9fb4c4",
+              edgeHighlight: "#1da7e7",
+            };
+      }
+
       function ensureGraph() {
         if (!window.vis) {
           $("graph-canvas").innerHTML = '<div class="empty">vis-network 未加载</div>';
@@ -2833,12 +3247,12 @@
               size: 16,
               borderWidth: 2,
               color: { background: "#1da7e7", border: "#ffffff", highlight: { background: "#30c5c8", border: "#1f2c3f" } },
-              font: { color: "#1b2736", size: 13, face: "Segoe UI" },
+              font: { color: graphPalette().nodeFont, size: 13, face: "Segoe UI" },
             },
             edges: {
               arrows: { to: { enabled: true, scaleFactor: 0.55 } },
-              color: { color: "#9fb4c4", highlight: "#1da7e7" },
-              font: { color: "#526679", size: 11, strokeWidth: 3, strokeColor: "#ffffff" },
+              color: { color: graphPalette().edgeColor, highlight: graphPalette().edgeHighlight },
+              font: { color: graphPalette().edgeFont, size: 11, strokeWidth: 3, strokeColor: graphPalette().edgeStroke },
               smooth: { enabled: true, type: "dynamic" },
             },
           },
@@ -2857,6 +3271,7 @@
       function applyGraphResponsiveOptions() {
         if (!state.graph.network) return;
         const compact = $("graph-canvas").clientWidth < 560;
+        const palette = graphPalette();
         state.graph.network.setOptions({
           physics: {
             enabled: state.graph.simulationRunning,
@@ -2869,12 +3284,13 @@
           },
           nodes: {
             size: compact ? 11 : 16,
-            font: { color: "#1b2736", size: compact ? 10 : 13, face: "Segoe UI" },
+            font: { color: palette.nodeFont, size: compact ? 10 : 13, face: "Segoe UI" },
             shadow: { enabled: !state.graph.lowPerf, color: "rgba(15, 39, 64, 0.15)", size: 8 },
           },
           edges: {
             arrows: { to: { enabled: true, scaleFactor: compact ? 0.42 : 0.55 } },
-            font: { color: "#526679", size: compact ? 9 : 11, strokeWidth: 3, strokeColor: "#ffffff" },
+            color: { color: palette.edgeColor, highlight: palette.edgeHighlight },
+            font: { color: palette.edgeFont, size: compact ? 9 : 11, strokeWidth: 3, strokeColor: palette.edgeStroke },
             smooth: state.graph.lowPerf ? { enabled: false } : { enabled: true, type: "dynamic" },
           },
         });
@@ -2911,7 +3327,7 @@
         state.graph.network.moveTo({
           position: state.graph.network.getViewPosition(),
           scale: nextScale,
-          animation: animated ? { duration: 180, easingFunction: "easeInOutQuad" } : false,
+          animation: shouldAnimateGraph(animated) ? { duration: 180, easingFunction: "easeInOutQuad" } : false,
         });
         updateGraphZoomControls(nextScale);
       }
@@ -2925,9 +3341,9 @@
         window.requestAnimationFrame(() => {
           state.graph.network.redraw();
           state.graph.network.fit({
-            animation: animated ? { duration: 320, easingFunction: "easeInOutQuad" } : false,
+            animation: shouldAnimateGraph(animated) ? { duration: 320, easingFunction: "easeInOutQuad" } : false,
           });
-          window.setTimeout(() => updateGraphZoomControls(actualGraphScale()), animated ? 360 : 40);
+          window.setTimeout(() => updateGraphZoomControls(actualGraphScale()), shouldAnimateGraph(animated) ? 360 : 40);
         });
       }
 
@@ -3169,30 +3585,23 @@
           hideCandidateMenu();
           return;
         }
-        const anchor = candidateAnchor(input);
-        if (menu.parentElement !== anchor) {
-          anchor.appendChild(menu);
-        }
+        if (menu.parentElement !== document.body) document.body.appendChild(menu);
         const rect = input.getBoundingClientRect();
-        const frame = candidateScrollFrame(input);
-        const frameRect = frame === document.documentElement
-          ? candidateViewport()
-          : frame.getBoundingClientRect();
-        const frameTop = frameRect.top ?? frameRect.y ?? 0;
-        const frameBottom = frameRect.bottom ?? ((frameRect.top || 0) + (frameRect.height || window.innerHeight));
+        const viewport = candidateViewport();
         const margin = 10;
         const gap = 6;
-        const width = Math.max(input.offsetWidth, 1);
-        const spaceBelow = frameBottom - rect.bottom - gap - margin;
-        const spaceAbove = rect.top - frameTop - gap - margin;
+        const width = Math.max(rect.width, 1);
+        const left = clamp(rect.left, viewport.left + margin, viewport.right - width - margin);
+        const spaceBelow = viewport.bottom - rect.bottom - gap - margin;
+        const spaceAbove = rect.top - viewport.top - gap - margin;
         const preferBelow = spaceBelow >= 132 || spaceBelow >= spaceAbove;
         const available = Math.max(preferBelow ? spaceBelow : spaceAbove, spaceBelow, spaceAbove);
         const maxHeight = Math.max(96, Math.min(250, available));
         const top = preferBelow
-          ? input.offsetTop + input.offsetHeight + gap
-          : input.offsetTop - maxHeight - gap;
+          ? rect.bottom + gap
+          : rect.top - maxHeight - gap;
         menu.style.width = `${width}px`;
-        menu.style.left = `${input.offsetLeft}px`;
+        menu.style.left = `${left}px`;
         menu.style.top = `${top}px`;
         menu.style.maxHeight = `${maxHeight}px`;
       }
@@ -3266,6 +3675,7 @@
         input.value = item.value;
         input.dispatchEvent(new Event("change", { bubbles: true }));
         hideCandidateMenu();
+        if (input.id === "graph-search") window.setTimeout(focusGraphNode, 0);
       }
 
       function moveCandidateSelection(delta) {
@@ -3332,6 +3742,7 @@
       }
 
       function normalizeGraphNode(n) {
+        const palette = graphPalette();
         return {
           id: n.id,
           label: n.label || n.id,
@@ -3341,12 +3752,13 @@
             : n.is_ghost
               ? { background: "#d7e5ee", border: "#ffffff" }
               : { background: "#1da7e7", border: "#ffffff" },
-          font: { color: n.is_ghost ? "#91a0ad" : "#1b2736" },
+          font: { color: n.is_ghost ? palette.nodeMuted : palette.nodeFont },
         };
       }
 
       function normalizeGraphEdge(e) {
         const rawValue = Number(e.value || 0);
+        const palette = graphPalette();
         return {
           id: e.id || `${e.from}_${e.to}`,
           from: e.from,
@@ -3356,7 +3768,8 @@
           raw_value: rawValue,
           arrows: "to",
           dashes: !!e.dashes || e.is_active === false,
-          color: e.color || (e.is_active === false ? { color: "#c4ced8" } : undefined),
+          color: e.color || (e.is_active === false ? { color: "#c4ced8" } : { color: palette.edgeColor, highlight: palette.edgeHighlight }),
+          font: { color: palette.edgeFont, strokeWidth: 3, strokeColor: palette.edgeStroke },
           predicates: e.predicates || [],
           is_pinned: !!e.is_pinned,
           is_protected: !!e.is_protected,
@@ -3504,7 +3917,15 @@
       function focusGraphNode() {
         const q = $("graph-search").value.trim().toLowerCase();
         if (!q || !state.graph.network) return;
-        const found = state.graph.rawNodes.find((n) => String(n.label || n.id).toLowerCase().includes(q));
+        const found = state.graph.rawNodes.find((n) => {
+          const label = String(n.label || "").toLowerCase();
+          const id = String(n.id || "").toLowerCase();
+          return label === q || id === q;
+        }) || state.graph.rawNodes.find((n) => {
+          const label = String(n.label || "").toLowerCase();
+          const id = String(n.id || "").toLowerCase();
+          return label.includes(q) || id.includes(q);
+        });
         if (!found) {
           toast("未找到节点");
           return;
@@ -3512,7 +3933,10 @@
         state.graph.network.selectNodes([found.id]);
         state.graph.userZoomed = true;
         clearGraphAutoFit();
-        state.graph.network.focus(found.id, { scale: 1.4, animation: true });
+        state.graph.network.focus(found.id, {
+          scale: 1.4,
+          animation: shouldAnimateGraph(true) ? { duration: 220, easingFunction: "easeInOutQuad" } : false,
+        });
         updateGraphZoomControls(1.4);
         showNodeDetail(found.id);
       }
@@ -3525,7 +3949,10 @@
         state.graph.userZoomed = true;
         clearGraphAutoFit();
         state.graph.network.selectNodes([found.id]);
-        state.graph.network.focus(found.id, { scale: Math.max(1.15, currentGraphScale()), animation: true });
+        state.graph.network.focus(found.id, {
+          scale: Math.max(1.15, currentGraphScale()),
+          animation: shouldAnimateGraph(true) ? { duration: 220, easingFunction: "easeInOutQuad" } : false,
+        });
         updateGraphZoomControls(Math.max(1.15, currentGraphScale()));
         if (showDetail) showNodeDetail(found.id);
       }
@@ -4396,6 +4823,7 @@
         $("detail-clear").onclick = clearDetail;
         $("graph-load").onclick = loadGraph;
         $("graph-layout").onclick = () => state.graph.network?.stabilize(120);
+        $("graph-search-action").onclick = focusGraphNode;
         $("graph-add-node").onclick = showGraphAddNodePanel;
         $("graph-add-edge").onclick = showGraphAddEdgePanel;
         $("graph-dictionary").onclick = () => showGraphDictionary("nodes");
@@ -4408,7 +4836,14 @@
         $("graph-zoom-in").onclick = () => adjustGraphZoom(0.15);
         $("graph-fit").onclick = fitGraphByControl;
         $("graph-zoom").addEventListener("input", (event) => setGraphZoom(event.target.value, false));
-        $("graph-search").addEventListener("keydown", (e) => { if (e.key === "Enter") focusGraphNode(); });
+        $("graph-search").addEventListener("keydown", (e) => {
+          if (e.key !== "Enter") return;
+          if (state.candidateMenu.input === e.target && state.candidateMenu.items.length) return;
+          focusGraphNode();
+        });
+        $("graph-search").addEventListener("change", () => {
+          if ($("graph-search").value.trim()) focusGraphNode();
+        });
         $("graph-scope").addEventListener("change", async (event) => {
           state.graph.scopeFocus = event.target.value.trim();
           state.graph.sourceFocus = "";
@@ -4440,6 +4875,13 @@
         $("config-load").onclick = loadConfig;
         $("config-save").onclick = () => saveRuntimeConfig(false).catch((error) => toast(errText(error)));
         $("config-persist").onclick = () => saveRuntimeConfig(true).catch((error) => toast(errText(error)));
+        ["input", "change"].forEach((eventName) => {
+          $("ui-theme").addEventListener(eventName, handleUiPrefChange);
+          $("ui-effects").addEventListener(eventName, handleUiPrefChange);
+        });
+        window.matchMedia?.("(prefers-color-scheme: dark)")?.addEventListener?.("change", () => {
+          if (state.ui.theme === "auto") applyUiPrefs();
+        });
         const activityClear = $("activity-log-clear");
         if (activityClear) {
           activityClear.onclick = () => {
@@ -4475,6 +4917,7 @@
       window.addEventListener("resize", handleViewportResize);
 
       document.addEventListener("DOMContentLoaded", async () => {
+        applyUiPrefs();
         upgradeCandidateInputs();
         bindEvents();
         handleViewportResize();
