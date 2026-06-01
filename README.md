@@ -387,6 +387,10 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 
 </details>
 
+### TODO
+- 优化plugin page性能
+- 提高图谱可读性
+
 ## 特别感谢
 
 - [ARC](https://github.com/A-Dawn)
